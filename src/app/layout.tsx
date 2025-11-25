@@ -1,7 +1,7 @@
 // src/app/layout.tsx
 import { Geist, Geist_Mono } from 'next/font/google'
 
-import { ThemeProvider } from '@/components/providers/theme-provider'
+import { Providers } from '@/components/providers'
 
 import type { Metadata, Viewport } from 'next'
 
@@ -41,7 +41,7 @@ export default function RootLayout({ children }: Readonly<RootLayoutProps>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   )
