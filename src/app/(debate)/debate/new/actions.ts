@@ -1,16 +1,19 @@
 // src/app/(debate)/debate/new/actions.ts
 'use server'
 
-import { debateFormSchema, type DebateFormValues } from '@/lib/schemas/debate-schema'
+import { debateFormSchema } from '@/lib/schemas/debate-schema'
+import { createDebateSession } from '@/services/debate-service'
 
-export interface CreateDebateResult {
+import type { DebateFormValues } from '@/lib/schemas/debate-schema'
+
+export interface CreateDebateActionResult {
   success: boolean
-  debateId?: string
-  error?: string
-  fieldErrors?: Record<string, string[] | undefined>
+  debateId?: string | undefined
+  error?: string | undefined
+  fieldErrors?: Record<string, string[] | undefined> | undefined
 }
 
-export async function createDebate(data: DebateFormValues): Promise<CreateDebateResult> {
+export async function createDebate(data: DebateFormValues): Promise<CreateDebateActionResult> {
   const validated = debateFormSchema.safeParse(data)
 
   if (!validated.success) {
@@ -21,8 +24,17 @@ export async function createDebate(data: DebateFormValues): Promise<CreateDebate
     }
   }
 
+  const result = await createDebateSession(validated.data)
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error ?? 'Failed to create debate',
+    }
+  }
+
   return {
     success: true,
-    debateId: `debate-${crypto.randomUUID()}`,
+    debateId: result.debateId,
   }
 }

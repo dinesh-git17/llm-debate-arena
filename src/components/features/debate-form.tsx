@@ -24,8 +24,8 @@ import { cn } from '@/lib/utils'
 const STORAGE_KEY = 'debate-draft'
 
 interface DebateFormProps {
-  onSubmit: (data: DebateFormValues) => Promise<{ success: boolean; error?: string }>
-  isSubmitting?: boolean
+  onSubmit: (data: DebateFormValues) => Promise<{ success: boolean; error?: string | undefined }>
+  isSubmitting?: boolean | undefined
 }
 
 export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) {
