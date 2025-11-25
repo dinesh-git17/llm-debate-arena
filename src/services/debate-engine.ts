@@ -2,10 +2,19 @@
 
 import { getProviderForPosition } from '@/lib/debate-assignment'
 import { getEngineState, storeEngineState } from '@/lib/engine-store'
+import { estimateTurnInputTokens } from '@/lib/token-counter'
+import {
+  checkBudget,
+  initializeDebateBudget,
+  isBudgetInitialized,
+  recordUsage,
+  shouldEndDueToBudget,
+} from '@/services/budget-manager'
 import { getFullDebateSession, updateDebateStatus } from '@/services/debate-service'
 import { TurnSequencer } from '@/services/turn-sequencer'
 
 import type { DebateSession, LLMProvider } from '@/types/debate'
+import type { GenerateResult, LLMProviderType } from '@/types/llm'
 import type { DebateEngineState, DebateProgress, TurnConfig, TurnProvider } from '@/types/turn'
 
 export interface DebateEngineContext {
@@ -57,6 +66,11 @@ export async function initializeEngine(debateId: string): Promise<DebateEngineCo
   })
 
   await storeEngineState(debateId, sequencer.getState())
+
+  if (!isBudgetInitialized(debateId)) {
+    initializeDebateBudget(debateId)
+    console.log(`[Engine] Initialized budget tracking: ${debateId}`)
+  }
 
   console.log(`[Engine] Initialized new engine: ${debateId}`)
 
@@ -380,4 +394,143 @@ export async function canStartDebate(debateId: string): Promise<{
   }
 
   return { canStart: true }
+}
+
+/**
+ * Map turn provider to LLM provider type for budget checking.
+ */
+function mapTurnProviderToLLMProvider(provider: TurnProvider): LLMProviderType {
+  switch (provider) {
+    case 'chatgpt':
+      return 'openai'
+    case 'grok':
+      return 'xai'
+    case 'claude':
+      return 'anthropic'
+  }
+}
+
+/**
+ * Check if a turn can proceed within budget.
+ */
+export async function checkTurnBudget(
+  debateId: string,
+  systemPrompt: string,
+  debateContext: string
+): Promise<{
+  allowed: boolean
+  warning?: string | undefined
+  error?: string | undefined
+}> {
+  const context = await initializeEngine(debateId)
+  if (!context) {
+    return { allowed: false, error: 'Engine not found' }
+  }
+
+  const { session, sequencer } = context
+  const currentTurn = sequencer.getCurrentTurn()
+
+  if (!currentTurn) {
+    return { allowed: false, error: 'No current turn' }
+  }
+
+  let provider: TurnProvider
+  if (currentTurn.speaker === 'moderator') {
+    provider = 'claude'
+  } else {
+    provider = getProviderForPosition(session.assignment, currentTurn.speaker)
+  }
+
+  const llmProvider = mapTurnProviderToLLMProvider(provider)
+
+  const estimatedInput = estimateTurnInputTokens(
+    systemPrompt,
+    debateContext,
+    currentTurn.description,
+    llmProvider
+  )
+
+  const check = checkBudget(debateId, llmProvider, estimatedInput, currentTurn.maxTokens)
+
+  if (!check.allowed) {
+    return { allowed: false, error: check.reason }
+  }
+
+  if (check.warningLevel === 'critical') {
+    return {
+      allowed: true,
+      warning: `Budget critically low: ${check.tokensRemaining} tokens remaining`,
+    }
+  }
+
+  if (check.warningLevel === 'warning') {
+    return {
+      allowed: true,
+      warning: `Budget warning: ${check.tokensRemaining} tokens remaining`,
+    }
+  }
+
+  return { allowed: true }
+}
+
+/**
+ * Record a completed turn with usage tracking.
+ */
+export async function recordCompletedTurnWithUsage(
+  debateId: string,
+  content: string,
+  provider: LLMProvider | 'claude',
+  generateResult: GenerateResult
+): Promise<RecordTurnResult> {
+  const context = await initializeEngine(debateId)
+  if (!context) {
+    return { success: false, isComplete: false, error: 'Engine not found' }
+  }
+
+  const { sequencer } = context
+  const currentTurn = sequencer.getCurrentTurn()
+
+  if (!currentTurn) {
+    return { success: false, isComplete: true, error: 'No current turn' }
+  }
+
+  try {
+    sequencer.recordTurn({
+      speaker: currentTurn.speaker,
+      provider,
+      content,
+      tokenCount: generateResult.totalTokens,
+      startedAt: new Date(Date.now() - generateResult.latencyMs),
+      completedAt: new Date(),
+    })
+
+    await storeEngineState(debateId, sequencer.getState())
+
+    const turnId = `${debateId}_turn_${sequencer.getState().currentTurnIndex - 1}`
+    const usageProvider = provider === 'claude' ? 'claude' : mapTurnProviderToLLMProvider(provider)
+    recordUsage(debateId, turnId, usageProvider, generateResult)
+
+    const budgetCheck = shouldEndDueToBudget(debateId)
+    if (budgetCheck.shouldEnd) {
+      console.log(`[Engine] Ending debate due to budget: ${budgetCheck.reason}`)
+      sequencer.cancel(budgetCheck.reason ?? 'Budget exhausted')
+      await storeEngineState(debateId, sequencer.getState())
+      await updateDebateStatus(debateId, 'completed')
+      return { success: true, isComplete: true }
+    }
+
+    const isComplete = sequencer.isComplete()
+    if (isComplete) {
+      await updateDebateStatus(debateId, 'completed')
+    }
+
+    return { success: true, isComplete }
+  } catch (error) {
+    console.error(`[Engine] Failed to record turn with usage:`, error)
+    return {
+      success: false,
+      isComplete: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
 }
