@@ -2,7 +2,8 @@
 'use client'
 
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ExternalLink, Plus, Trash2 } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 
@@ -178,7 +179,15 @@ export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) 
         {showCustomRules && (
           <div id="custom-rules-section" className="space-y-4 rounded-lg border border-border p-4">
             <p className="text-sm text-muted-foreground">
-              Rules will be validated by the moderator before the debate starts.
+              Custom rules supplement the{' '}
+              <Link
+                href="/debate/rules"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                default rules
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </Link>
+              . The moderator will validate and enforce them during the debate.
             </p>
 
             {fields.length > 0 && (
