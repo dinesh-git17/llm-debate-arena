@@ -1,0 +1,7 @@
+# .github/CODEOWNERS
+
+# Default owners for all files
+* @dinesh-git17
+
+# Workflow files require additional review
+/.github/ @dinesh-git17
