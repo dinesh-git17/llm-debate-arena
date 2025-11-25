@@ -5,3 +5,5 @@ export type { Toast, ToastType } from './ui-store'
 
 export { useDebateStore } from './debate-store'
 export type { LocalMessage } from './debate-store'
+
+export { useDebateViewStore } from './debate-view-store'
