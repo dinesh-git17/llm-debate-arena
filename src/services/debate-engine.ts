@@ -63,7 +63,6 @@ export async function initializeEngine(debateId: string): Promise<DebateEngineCo
 
   const existingState = await getEngineState(debateId)
   if (existingState) {
-    console.log(`[Engine] Resuming existing engine: ${debateId}`)
     const sequencer = TurnSequencer.fromState(existingState)
     return { session, sequencer }
   }
@@ -79,10 +78,7 @@ export async function initializeEngine(debateId: string): Promise<DebateEngineCo
 
   if (!isBudgetInitialized(debateId)) {
     initializeDebateBudget(debateId, session.turns)
-    console.log(`[Engine] Initialized budget tracking: ${debateId} (${session.turns} turns)`)
   }
-
-  console.log(`[Engine] Initialized new engine: ${debateId}`)
 
   return { session, sequencer }
 }
@@ -107,7 +103,6 @@ export async function startDebate(debateId: string): Promise<StartDebateResult> 
       format: context.session.format,
     })
 
-    console.log(`[Engine] Started debate: ${debateId}`)
     return { success: true }
   } catch (error) {
     console.error(`[Engine] Failed to start debate:`, error)
@@ -341,8 +336,6 @@ export async function endDebateEarly(debateId: string, reason: string): Promise<
     completedTurns: progress.currentTurn,
   })
 
-  console.log(`[Engine] Ended debate early: ${debateId} - ${reason}`)
-
   return true
 }
 
@@ -362,8 +355,6 @@ export async function pauseDebate(debateId: string): Promise<boolean> {
     pausedAtTurn: progress.currentTurn,
   })
 
-  console.log(`[Engine] Paused debate: ${debateId}`)
-
   return true
 }
 
@@ -382,8 +373,6 @@ export async function resumeDebate(debateId: string): Promise<boolean> {
   debateEvents.emitEvent(debateId, 'debate_resumed', {
     resumingAtTurn: progress.currentTurn,
   })
-
-  console.log(`[Engine] Resumed debate: ${debateId}`)
 
   return true
 }
@@ -549,7 +538,6 @@ export async function recordCompletedTurnWithUsage(
 
     const budgetCheck = shouldEndDueToBudget(debateId)
     if (budgetCheck.shouldEnd) {
-      console.log(`[Engine] Ending debate due to budget: ${budgetCheck.reason}`)
       sequencer.cancel(budgetCheck.reason ?? 'Budget exhausted')
       await storeEngineState(debateId, sequencer.getState())
       await updateDebateStatus(debateId, 'completed')
@@ -787,8 +775,6 @@ export async function runDebateLoop(debateId: string): Promise<{
   success: boolean
   error?: string | undefined
 }> {
-  console.log(`[Engine] Starting debate loop: ${debateId}`)
-
   const loopStartTime = Date.now()
   let turnCount = 0
   const maxTurns = 100 // Safety limit
@@ -804,7 +790,6 @@ export async function runDebateLoop(debateId: string): Promise<{
 
     // Check for terminal states
     if (status === 'completed') {
-      console.log(`[Engine] Debate completed: ${debateId}`)
       const budgetStatus = getBudgetStatus(debateId)
       debateEvents.emitEvent(debateId, 'debate_completed', {
         totalTurns: context.sequencer.getProgress().currentTurn,
@@ -822,7 +807,6 @@ export async function runDebateLoop(debateId: string): Promise<{
     }
 
     if (status === 'cancelled') {
-      console.log(`[Engine] Debate cancelled: ${debateId}`)
       return { success: true }
     }
 
@@ -832,7 +816,6 @@ export async function runDebateLoop(debateId: string): Promise<{
     }
 
     if (status === 'paused') {
-      console.log(`[Engine] Debate paused, stopping loop: ${debateId}`)
       return { success: true }
     }
 
@@ -846,7 +829,6 @@ export async function runDebateLoop(debateId: string): Promise<{
     }
 
     if (result.isComplete) {
-      console.log(`[Engine] Debate completed after turn: ${debateId}`)
       const budgetStatus = getBudgetStatus(debateId)
       debateEvents.emitEvent(debateId, 'debate_completed', {
         totalTurns: turnCount + 1,

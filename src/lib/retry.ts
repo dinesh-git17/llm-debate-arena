@@ -67,11 +67,6 @@ export async function withRetry<T>(
       const retryAfterMs = error instanceof LLMError ? error.retryAfterMs : undefined
       const delay = calculateDelay(attempt, opts, retryAfterMs)
 
-      console.log(
-        `[Retry] Attempt ${attempt + 1}/${opts.maxRetries} failed, ` +
-          `retrying in ${Math.round(delay)}ms: ${lastError.message}`
-      )
-
       await sleep(delay)
     }
   }

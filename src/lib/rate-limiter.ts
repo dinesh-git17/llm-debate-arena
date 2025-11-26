@@ -132,8 +132,6 @@ export async function waitForCapacity(
     const resetTime = getResetTime(provider)
     const waitTime = Math.min(resetTime + 100, 5000)
 
-    console.log(`[RateLimit] ${provider} limit reached, waiting ${waitTime}ms`)
-
     await new Promise((resolve) => setTimeout(resolve, waitTime))
   }
 }

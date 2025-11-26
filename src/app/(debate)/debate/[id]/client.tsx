@@ -105,11 +105,9 @@ export function DebatePageClient({
           totalTurns: data.totalTurns,
           percentComplete: Math.round((data.currentTurnIndex / data.totalTurns) * 100),
         })
-
-        console.log(`[Debate] Hydrated ${messages.length} messages from server`)
       }
-    } catch (error) {
-      console.error('[Debate] Failed to hydrate from server:', error)
+    } catch {
+      // Failed to hydrate from server - continue without history
     }
   }, [debateId, hydrateMessages, setProgress])
 
@@ -154,12 +152,6 @@ export function DebatePageClient({
   useDebateStream({
     debateId,
     autoConnect: true,
-    onDebateComplete: () => {
-      console.log('[Debate] Completed')
-    },
-    onError: (error) => {
-      console.error('[Debate] Error:', error)
-    },
   })
 
   return (

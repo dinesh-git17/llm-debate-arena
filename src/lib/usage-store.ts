@@ -37,9 +37,6 @@ export function initializeUsage(debateId: string, turnCount?: number): DebateUsa
   }
 
   usageStore.set(debateId, usage)
-  console.log(
-    `[Budget] Initialized for ${debateId}: ${budgetTokens} tokens (${turnCount ?? 'default'} turns)`
-  )
   return usage
 }
 

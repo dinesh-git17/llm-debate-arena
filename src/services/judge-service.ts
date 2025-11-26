@@ -113,11 +113,6 @@ export async function getJudgeAnalysis(
 
     analysisCache.set(debateId, analysis)
 
-    console.log(`[JudgeService] Generated analysis for ${debateId}`, {
-      tokens: result.totalTokens,
-      latencyMs: Date.now() - startTime,
-    })
-
     return {
       success: true,
       analysis,

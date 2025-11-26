@@ -45,13 +45,6 @@ export async function createDebateSession(formData: DebateFormValues): Promise<C
 
     await storeSession(session)
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[Debate ${debateId}] Created with assignment:`, {
-        for: assignment.forPosition,
-        against: assignment.againstPosition,
-      })
-    }
-
     return {
       success: true,
       debateId,

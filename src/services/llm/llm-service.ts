@@ -48,14 +48,6 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
         consumeCapacity(provider.providerType, result.totalTokens)
       }
 
-      console.log(`[LLM] ${provider.providerType} completed`, {
-        model: result.model,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        latencyMs: result.latencyMs,
-        finishReason: result.finishReason,
-      })
-
       return result
     } catch (error) {
       console.error(`[LLM] ${provider.providerType} error:`, {
@@ -116,12 +108,6 @@ export async function* generateStream(
     if (enableRateLimit) {
       consumeCapacity(provider.providerType, inputTokens + outputTokens)
     }
-
-    console.log(`[LLM] ${provider.providerType} stream completed`, {
-      inputTokens,
-      outputTokens,
-      latencyMs: Date.now() - startTime,
-    })
 
     return {
       content: fullContent,

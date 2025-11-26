@@ -102,15 +102,6 @@ export function recordUsage(
 
   const usage = recordTurnUsage(debateId, turnUsage)
 
-  console.log(`[Budget] Recorded usage for ${debateId}`, {
-    turnId,
-    provider,
-    tokens: result.totalTokens,
-    cost: cost.totalCost,
-    budgetRemaining: usage.budgetRemainingTokens,
-    utilization: `${usage.budgetUtilizationPercent}%`,
-  })
-
   return usage
 }
 
