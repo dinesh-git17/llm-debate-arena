@@ -7,6 +7,7 @@ import {
   canStartDebate,
   getCurrentTurnInfo,
   getDebateEngineState,
+  runDebateLoop,
   startDebate,
 } from '@/services/debate-engine'
 
@@ -69,6 +70,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams): Prom
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 500 })
   }
+
+  // Start the debate loop in the background (don't await)
+  // This allows the endpoint to return immediately while turns execute
+  runDebateLoop(id).catch((error) => {
+    console.error(`[Engine Route] Debate loop failed for ${id}:`, error)
+  })
 
   const turnInfo = await getCurrentTurnInfo(id)
 

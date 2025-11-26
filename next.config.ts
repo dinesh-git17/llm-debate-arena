@@ -1,8 +1,16 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['tiktoken'],
   experimental: {
-    serverComponentsExternalPackages: ['tiktoken'],
+    turbo: {
+      rules: {
+        '*.wasm': {
+          loaders: ['@vercel/turbopack-ecmascript/wasm'],
+          as: '*.js',
+        },
+      },
+    },
   },
   webpack: (config, { isServer }) => {
     config.experiments = {

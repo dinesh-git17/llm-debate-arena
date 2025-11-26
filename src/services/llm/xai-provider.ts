@@ -16,7 +16,7 @@ import type {
   StreamChunk,
 } from '@/types/llm'
 
-const MODEL = 'grok-beta'
+const MODEL = 'grok-4-1-fast-reasoning'
 const BASE_URL = 'https://api.x.ai/v1'
 
 export class XAIProvider extends BaseLLMProvider {

@@ -1,9 +1,37 @@
 // src/lib/session-store.ts
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
 
+import { Redis } from '@upstash/redis'
+
 import type { DebateSession, DebateSessionPublic } from '@/types/debate'
 
-const sessionStore = new Map<string, string>()
+// Redis client - initialized lazily
+let redisClient: Redis | null = null
+
+function getRedisClient(): Redis | null {
+  if (redisClient) return redisClient
+
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  if (url && token) {
+    redisClient = new Redis({ url, token })
+    return redisClient
+  }
+
+  return null
+}
+
+// In-memory fallback for local development (with HMR-safe global)
+const globalForStore = globalThis as unknown as {
+  sessionStore: Map<string, string> | undefined
+}
+const memoryStore = globalForStore.sessionStore ?? new Map<string, string>()
+if (process.env.NODE_ENV === 'development') {
+  globalForStore.sessionStore = memoryStore
+}
+
+const REDIS_KEY_PREFIX = 'debate:session:'
 
 const SALT = 'llm-debate-arena-session-salt'
 
@@ -81,11 +109,28 @@ function decryptSession(encryptedData: string): DebateSession {
 }
 
 /**
+ * Calculates TTL in seconds from session expiry.
+ */
+function getTTLSeconds(session: DebateSession): number {
+  const now = Date.now()
+  const expiresAt = session.expiresAt.getTime()
+  return Math.max(1, Math.floor((expiresAt - now) / 1000))
+}
+
+/**
  * Stores a debate session securely with encryption.
  */
 export async function storeSession(session: DebateSession): Promise<void> {
   const encrypted = encryptSession(session)
-  sessionStore.set(session.id, encrypted)
+  const redis = getRedisClient()
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${session.id}`
+    const ttl = getTTLSeconds(session)
+    await redis.set(key, encrypted, { ex: ttl })
+  } else {
+    memoryStore.set(session.id, encrypted)
+  }
 }
 
 /**
@@ -93,20 +138,35 @@ export async function storeSession(session: DebateSession): Promise<void> {
  * Returns null if not found or expired.
  */
 export async function getSession(id: string): Promise<DebateSession | null> {
-  const encrypted = sessionStore.get(id)
+  const redis = getRedisClient()
+  let encrypted: string | null = null
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${id}`
+    encrypted = await redis.get<string>(key)
+  } else {
+    encrypted = memoryStore.get(id) ?? null
+  }
+
   if (!encrypted) return null
 
   try {
     const session = decryptSession(encrypted)
 
-    if (session.expiresAt < new Date()) {
-      sessionStore.delete(id)
+    // Redis handles TTL automatically, but check for memory store
+    if (!redis && session.expiresAt < new Date()) {
+      memoryStore.delete(id)
       return null
     }
 
     return session
   } catch {
-    sessionStore.delete(id)
+    // Corrupted data - clean up
+    if (redis) {
+      await redis.del(`${REDIS_KEY_PREFIX}${id}`)
+    } else {
+      memoryStore.delete(id)
+    }
     return null
   }
 }
@@ -135,7 +195,15 @@ export async function updateSession(
  * Deletes a debate session.
  */
 export async function deleteSession(id: string): Promise<boolean> {
-  return sessionStore.delete(id)
+  const redis = getRedisClient()
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${id}`
+    const deleted = await redis.del(key)
+    return deleted > 0
+  } else {
+    return memoryStore.delete(id)
+  }
 }
 
 /**
@@ -156,27 +224,40 @@ export function toPublicSession(session: DebateSession): DebateSessionPublic {
 
 /**
  * Cleans up expired sessions from the store.
+ * Note: Redis handles TTL automatically, this is only for memory store.
  */
 export function cleanExpiredSessions(): void {
+  const redis = getRedisClient()
+  if (redis) {
+    // Redis handles expiration automatically via TTL
+    return
+  }
+
   const now = new Date()
-  for (const [id] of sessionStore) {
-    const encrypted = sessionStore.get(id)
+  for (const [id] of memoryStore) {
+    const encrypted = memoryStore.get(id)
     if (!encrypted) continue
 
     try {
       const session = decryptSession(encrypted)
       if (session.expiresAt < now) {
-        sessionStore.delete(id)
+        memoryStore.delete(id)
       }
     } catch {
-      sessionStore.delete(id)
+      memoryStore.delete(id)
     }
   }
 }
 
 /**
  * Gets the current session count (for monitoring).
+ * Note: Only accurate for memory store. Returns -1 when using Redis.
  */
 export function getSessionCount(): number {
-  return sessionStore.size
+  const redis = getRedisClient()
+  if (redis) {
+    // Would need SCAN to count Redis keys - return -1 to indicate unknown
+    return -1
+  }
+  return memoryStore.size
 }

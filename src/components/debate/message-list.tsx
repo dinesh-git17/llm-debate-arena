@@ -2,12 +2,14 @@
 
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useDebateViewStore } from '@/store/debate-view-store'
 
 import { MessageBubble } from './message-bubble'
+
+import type { DebateMessage } from '@/types/debate-ui'
 
 interface MessageListProps {
   className?: string
@@ -15,8 +17,27 @@ interface MessageListProps {
 }
 
 export function MessageList({ className, autoScroll = true }: MessageListProps) {
-  const messages = useDebateViewStore((s) => s.messages)
+  // Subscribe to both messages and displayedMessageIds to trigger re-renders
+  const allMessages = useDebateViewStore((s) => s.messages)
+  const displayedIds = useDebateViewStore((s) => s.displayedMessageIds)
   const currentTurnId = useDebateViewStore((s) => s.currentTurnId)
+  const markMessageDisplayed = useDebateViewStore((s) => s.markMessageDisplayed)
+
+  // Get visible messages: all displayed + the first non-displayed (currently animating)
+  // We need allMessages and displayedIds subscriptions above for reactivity
+  const messages: DebateMessage[] = []
+  for (const msg of allMessages) {
+    messages.push(msg)
+    if (!displayedIds.has(msg.id)) break
+  }
+
+  // Create stable callback for marking messages as displayed
+  const handleAnimationComplete = useCallback(
+    (messageId: string) => {
+      markMessageDisplayed(messageId)
+    },
+    [markMessageDisplayed]
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const isUserScrolling = useRef(false)
   const lastMessageCount = useRef(0)
@@ -82,14 +103,19 @@ export function MessageList({ className, autoScroll = true }: MessageListProps) 
   return (
     <div
       ref={containerRef}
-      className={cn('flex-1 scroll-smooth overflow-y-auto px-4 py-6', className)}
+      className={cn('scroll-smooth overflow-y-auto px-4 py-6', className)}
       role="log"
       aria-live="polite"
       aria-label="Debate messages"
     >
       <div className="mx-auto max-w-4xl">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} showTimestamp={message.isComplete} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            showTimestamp={message.isComplete}
+            onAnimationComplete={() => handleAnimationComplete(message.id)}
+          />
         ))}
 
         <div id="scroll-anchor" aria-hidden="true" />

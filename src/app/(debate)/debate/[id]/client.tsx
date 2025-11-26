@@ -5,7 +5,9 @@
 import { useEffect } from 'react'
 
 import { DebateHeader } from '@/components/debate/debate-header'
+import { FloatingControls } from '@/components/debate/floating-controls'
 import { MessageList } from '@/components/debate/message-list'
+import { ShortcutsHelp } from '@/components/debate/shortcuts-help'
 import { useDebateStream } from '@/hooks/use-debate-stream'
 import { useDebateViewStore } from '@/store/debate-view-store'
 
@@ -72,12 +74,20 @@ export function DebatePageClient({
   })
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <DebateHeader debateId={debateId} />
 
-      <main className="flex-1 overflow-hidden">
-        <MessageList autoScroll />
+      <main className="relative min-h-0 flex-1">
+        <MessageList autoScroll className="h-full" />
+
+        {/* Shortcuts help - bottom right */}
+        <div className="absolute bottom-4 right-4 z-10">
+          <ShortcutsHelp />
+        </div>
       </main>
+
+      {/* Floating controls */}
+      <FloatingControls debateId={debateId} />
 
       <div className="safe-area-inset-bottom" />
     </div>

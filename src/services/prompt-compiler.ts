@@ -26,7 +26,8 @@ export function buildModeratorContext(
   session: DebateSession,
   completedTurns: Turn[],
   currentTurnConfig: TurnConfig,
-  violations: ViolationRecord[] = []
+  violations: ViolationRecord[] = [],
+  nextTurnConfig?: TurnConfig
 ): ModeratorContext {
   const debateHistory: DebateHistoryEntry[] = completedTurns.map((turn, index) => ({
     speaker: turn.speaker,
@@ -40,6 +41,19 @@ export function buildModeratorContext(
 
   const debaterTurns = completedTurns.filter((t) => t.speaker !== 'moderator')
 
+  // For moderator turns (intro/transition), nextSpeaker should be from the NEXT turn in sequence
+  // For debater turns, nextSpeaker is the current speaker
+  let nextSpeaker: 'for' | 'against' | undefined
+  if (currentTurnConfig.speaker === 'moderator') {
+    // Use the next turn's speaker if available
+    nextSpeaker =
+      nextTurnConfig?.speaker !== 'moderator'
+        ? (nextTurnConfig?.speaker as 'for' | 'against')
+        : undefined
+  } else {
+    nextSpeaker = currentTurnConfig.speaker as 'for' | 'against'
+  }
+
   return {
     topic: session.topic,
     format: session.format,
@@ -48,7 +62,7 @@ export function buildModeratorContext(
     customRules: session.customRules,
     debateHistory,
     currentSpeaker: currentTurnConfig.speaker,
-    nextSpeaker: currentTurnConfig.speaker !== 'moderator' ? currentTurnConfig.speaker : undefined,
+    nextSpeaker,
     previousTurnContent: previousTurn?.content,
     previousTurnSpeaker: previousTurn?.speaker,
     violations,

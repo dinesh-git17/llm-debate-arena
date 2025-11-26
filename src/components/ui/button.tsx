@@ -1,9 +1,11 @@
 // src/components/ui/button.tsx
+
 import { Slot } from '@radix-ui/react-slot'
+import { forwardRef } from 'react'
 
 import { cn } from '@/lib/utils'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'destructive'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -17,6 +19,7 @@ const variantStyles: Record<ButtonVariant, string> = {
   secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
   ghost: 'hover:bg-accent hover:text-accent-foreground',
   outline: 'border border-border bg-background hover:bg-accent hover:text-accent-foreground',
+  destructive: 'bg-destructive text-white hover:bg-destructive/90 shadow-sm',
 }
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -25,26 +28,25 @@ const sizeStyles: Record<ButtonSize, string> = {
   lg: 'h-12 px-6 text-base rounded-lg',
 }
 
-export function Button({
-  className,
-  variant = 'primary',
-  size = 'md',
-  asChild = false,
-  ...props
-}: ButtonProps) {
-  const Component = asChild ? Slot : 'button'
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = 'primary', size = 'md', asChild = false, ...props }, ref) => {
+    const Component = asChild ? Slot : 'button'
 
-  return (
-    <Component
-      className={cn(
-        'inline-flex items-center justify-center font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        'disabled:pointer-events-none disabled:opacity-50',
-        variantStyles[variant],
-        sizeStyles[size],
-        className
-      )}
-      {...props}
-    />
-  )
-}
+    return (
+      <Component
+        ref={ref}
+        className={cn(
+          'inline-flex items-center justify-center font-medium transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'disabled:pointer-events-none disabled:opacity-50',
+          variantStyles[variant],
+          sizeStyles[size],
+          className
+        )}
+        {...props}
+      />
+    )
+  }
+)
+
+Button.displayName = 'Button'

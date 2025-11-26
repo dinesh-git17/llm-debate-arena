@@ -1,16 +1,25 @@
 // src/services/debate-engine.ts
 
 import { getProviderForPosition } from '@/lib/debate-assignment'
+import { debateEvents } from '@/lib/debate-events'
 import { getEngineState, storeEngineState } from '@/lib/engine-store'
 import { estimateTurnInputTokens } from '@/lib/token-counter'
 import {
   checkBudget,
+  getBudgetStatus,
   initializeDebateBudget,
   isBudgetInitialized,
   recordUsage,
   shouldEndDueToBudget,
 } from '@/services/budget-manager'
 import { getFullDebateSession, updateDebateStatus } from '@/services/debate-service'
+import { generateStream } from '@/services/llm/llm-service'
+import {
+  buildModeratorContext,
+  compileDebaterPrompt,
+  compileModeratorPrompt,
+  isModeratorTurn,
+} from '@/services/prompt-compiler'
 import { TurnSequencer } from '@/services/turn-sequencer'
 
 import type { DebateSession, LLMProvider } from '@/types/debate'
@@ -90,6 +99,12 @@ export async function startDebate(debateId: string): Promise<StartDebateResult> 
     context.sequencer.start()
     await storeEngineState(debateId, context.sequencer.getState())
     await updateDebateStatus(debateId, 'active')
+
+    const progress = context.sequencer.getProgress()
+    debateEvents.emitEvent(debateId, 'debate_started', {
+      totalTurns: progress.totalTurns,
+      format: context.session.format,
+    })
 
     console.log(`[Engine] Started debate: ${debateId}`)
     return { success: true }
@@ -315,9 +330,15 @@ export async function endDebateEarly(debateId: string, reason: string): Promise<
   const context = await initializeEngine(debateId)
   if (!context) return false
 
+  const progress = context.sequencer.getProgress()
   context.sequencer.cancel(reason)
   await storeEngineState(debateId, context.sequencer.getState())
   await updateDebateStatus(debateId, 'completed')
+
+  debateEvents.emitEvent(debateId, 'debate_cancelled', {
+    reason,
+    completedTurns: progress.currentTurn,
+  })
 
   console.log(`[Engine] Ended debate early: ${debateId} - ${reason}`)
 
@@ -331,9 +352,14 @@ export async function pauseDebate(debateId: string): Promise<boolean> {
   const context = await initializeEngine(debateId)
   if (!context) return false
 
+  const progress = context.sequencer.getProgress()
   context.sequencer.pause()
   await storeEngineState(debateId, context.sequencer.getState())
   await updateDebateStatus(debateId, 'paused')
+
+  debateEvents.emitEvent(debateId, 'debate_paused', {
+    pausedAtTurn: progress.currentTurn,
+  })
 
   console.log(`[Engine] Paused debate: ${debateId}`)
 
@@ -347,9 +373,14 @@ export async function resumeDebate(debateId: string): Promise<boolean> {
   const context = await initializeEngine(debateId)
   if (!context) return false
 
+  const progress = context.sequencer.getProgress()
   context.sequencer.resume()
   await storeEngineState(debateId, context.sequencer.getState())
   await updateDebateStatus(debateId, 'active')
+
+  debateEvents.emitEvent(debateId, 'debate_resumed', {
+    resumingAtTurn: progress.currentTurn,
+  })
 
   console.log(`[Engine] Resumed debate: ${debateId}`)
 
@@ -366,6 +397,11 @@ export async function setDebateError(debateId: string, error: string): Promise<b
   context.sequencer.setError(error)
   await storeEngineState(debateId, context.sequencer.getState())
   await updateDebateStatus(debateId, 'error')
+
+  debateEvents.emitEvent(debateId, 'debate_error', {
+    error,
+    fatal: true,
+  })
 
   console.error(`[Engine] Debate error: ${debateId} - ${error}`)
 
@@ -533,4 +569,294 @@ export async function recordCompletedTurnWithUsage(
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
+}
+
+/**
+ * Execute the next turn in the debate.
+ * Handles both moderator and debater turns with streaming.
+ */
+export async function executeNextTurn(debateId: string): Promise<{
+  success: boolean
+  isComplete: boolean
+  error?: string
+}> {
+  const context = await initializeEngine(debateId)
+  if (!context) {
+    return { success: false, isComplete: false, error: 'Engine not found' }
+  }
+
+  const { session, sequencer } = context
+  const currentTurn = sequencer.getCurrentTurn()
+
+  if (!currentTurn) {
+    return { success: false, isComplete: true, error: 'No more turns' }
+  }
+
+  // Check if paused or terminated
+  const status = sequencer.getStatus()
+  if (status === 'paused') {
+    return { success: false, isComplete: false, error: 'Debate is paused' }
+  }
+  if (status === 'completed' || status === 'cancelled' || status === 'error') {
+    return { success: false, isComplete: true, error: `Debate is ${status}` }
+  }
+
+  // Determine provider for this turn
+  let provider: TurnProvider
+  if (currentTurn.speaker === 'moderator') {
+    provider = 'claude'
+  } else {
+    provider = getProviderForPosition(session.assignment, currentTurn.speaker)
+  }
+
+  const turnId = `${debateId}_turn_${sequencer.getState().currentTurnIndex}`
+  const startTime = Date.now()
+
+  // Emit turn started event
+  debateEvents.emitEvent(debateId, 'turn_started', {
+    turnId,
+    turnNumber: sequencer.getState().currentTurnIndex + 1,
+    speaker: currentTurn.speaker,
+    speakerLabel: currentTurn.label,
+    turnType: currentTurn.type,
+    provider,
+  })
+
+  try {
+    let systemPrompt: string
+    let userPrompt: string
+    let maxTokens: number
+    let temperature: number
+
+    // Compile prompts based on turn type
+    if (isModeratorTurn(currentTurn.type)) {
+      // For moderator turns, pass the next turn config so we know who speaks next
+      const nextTurn = sequencer.getNextTurn()
+      const moderatorContext = buildModeratorContext(
+        session,
+        sequencer.getCompletedTurns(),
+        currentTurn,
+        [], // violations
+        nextTurn ?? undefined
+      )
+      const compiled = compileModeratorPrompt(currentTurn.type, moderatorContext)
+      systemPrompt = compiled.systemPrompt
+      userPrompt = compiled.userPrompt
+      maxTokens = compiled.maxTokens
+      temperature = compiled.temperature
+    } else {
+      const compiled = compileDebaterPrompt(session, currentTurn, sequencer.getCompletedTurns())
+      systemPrompt = compiled.systemPrompt
+      userPrompt = compiled.userPrompt
+      maxTokens = compiled.maxTokens
+      temperature = compiled.temperature
+    }
+
+    // Check budget before generating
+    const llmProviderType = mapTurnProviderToLLMProvider(provider)
+    const estimatedInput = estimateTurnInputTokens(
+      systemPrompt,
+      sequencer.getDebateContext(),
+      currentTurn.description,
+      llmProviderType
+    )
+
+    const budgetCheck = checkBudget(debateId, llmProviderType, estimatedInput, maxTokens)
+    if (!budgetCheck.allowed) {
+      debateEvents.emitEvent(debateId, 'turn_error', {
+        turnId,
+        error: budgetCheck.reason ?? 'Budget exceeded',
+        recoverable: false,
+      })
+      return { success: false, isComplete: false, error: budgetCheck.reason ?? 'Budget exceeded' }
+    }
+
+    if (budgetCheck.warningLevel) {
+      const budgetStatus = getBudgetStatus(debateId)
+      const usedPercent = budgetStatus.usage?.budgetUtilizationPercent ?? 0
+      const remainingCost = budgetStatus.config.costLimitUsd
+        ? budgetStatus.config.costLimitUsd - (budgetStatus.usage?.totalCostUsd ?? 0)
+        : 0
+      debateEvents.emitEvent(debateId, 'budget_warning', {
+        budgetUsedPercent: usedPercent,
+        remainingTokens: budgetCheck.tokensRemaining,
+        remainingCost,
+        message: `Budget ${budgetCheck.warningLevel}: ${budgetCheck.tokensRemaining} tokens remaining`,
+      })
+    }
+
+    // Generate with streaming
+    let fullContent = ''
+    let accumulatedLength = 0
+
+    const stream = generateStream({
+      provider,
+      params: {
+        systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        maxTokens,
+        temperature,
+      },
+    })
+
+    for await (const chunk of stream) {
+      fullContent += chunk.content
+      accumulatedLength += chunk.content.length
+      debateEvents.emitEvent(debateId, 'turn_streaming', {
+        turnId,
+        chunk: chunk.content,
+        accumulatedLength,
+      })
+    }
+
+    // Get final result from generator return value
+    const durationMs = Date.now() - startTime
+    const inputTokens = Math.ceil(systemPrompt.length / 4) + Math.ceil(userPrompt.length / 4)
+    const outputTokens = Math.ceil(fullContent.length / 4)
+
+    const generateResult: GenerateResult = {
+      content: fullContent,
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      finishReason: 'stop',
+      latencyMs: durationMs,
+      provider: llmProviderType,
+      model: provider,
+    }
+
+    // Emit turn completed
+    debateEvents.emitEvent(debateId, 'turn_completed', {
+      turnId,
+      content: fullContent,
+      tokenCount: generateResult.totalTokens,
+      durationMs,
+    })
+
+    // Record the turn
+    const llmProvider: LLMProvider | 'claude' = provider === 'claude' ? 'claude' : provider
+    const recordResult = await recordCompletedTurnWithUsage(
+      debateId,
+      fullContent,
+      llmProvider,
+      generateResult
+    )
+
+    if (!recordResult.success) {
+      return {
+        success: false,
+        isComplete: false,
+        error: recordResult.error ?? 'Failed to record turn',
+      }
+    }
+
+    // Emit progress update - re-fetch to get updated state
+    const updatedContext = await initializeEngine(debateId)
+    if (updatedContext) {
+      const progress = updatedContext.sequencer.getProgress()
+      debateEvents.emitEvent(debateId, 'progress_update', {
+        currentTurn: progress.currentTurn,
+        totalTurns: progress.totalTurns,
+        percentComplete: progress.percentComplete,
+        debaterTurnsCompleted: progress.debaterTurnsCompleted,
+        debaterTurnsTotal: progress.debaterTurnsTotal,
+      })
+    }
+
+    return { success: true, isComplete: recordResult.isComplete }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`[Engine] Turn execution failed:`, error)
+
+    debateEvents.emitEvent(debateId, 'turn_error', {
+      turnId,
+      error: errorMsg,
+      recoverable: false,
+    })
+
+    return { success: false, isComplete: false, error: errorMsg }
+  }
+}
+
+/**
+ * Run the debate loop until completion or error.
+ * This executes all turns sequentially with streaming.
+ */
+export async function runDebateLoop(debateId: string): Promise<{
+  success: boolean
+  error?: string | undefined
+}> {
+  console.log(`[Engine] Starting debate loop: ${debateId}`)
+
+  const loopStartTime = Date.now()
+  let turnCount = 0
+  const maxTurns = 100 // Safety limit
+
+  while (turnCount < maxTurns) {
+    // Re-fetch context to get latest state
+    const context = await initializeEngine(debateId)
+    if (!context) {
+      return { success: false, error: 'Engine not found' }
+    }
+
+    const status = context.sequencer.getStatus()
+
+    // Check for terminal states
+    if (status === 'completed') {
+      console.log(`[Engine] Debate completed: ${debateId}`)
+      const budgetStatus = getBudgetStatus(debateId)
+      debateEvents.emitEvent(debateId, 'debate_completed', {
+        totalTurns: context.sequencer.getProgress().currentTurn,
+        durationMs: Date.now() - loopStartTime,
+        totalTokens: budgetStatus.usage?.totalTokens ?? 0,
+        totalCost: budgetStatus.usage?.totalCostUsd ?? 0,
+      })
+      return { success: true }
+    }
+
+    if (status === 'cancelled') {
+      console.log(`[Engine] Debate cancelled: ${debateId}`)
+      return { success: true }
+    }
+
+    if (status === 'error') {
+      const errorMsg = context.sequencer.getState().error ?? 'Unknown error'
+      return { success: false, error: errorMsg }
+    }
+
+    if (status === 'paused') {
+      console.log(`[Engine] Debate paused, stopping loop: ${debateId}`)
+      return { success: true }
+    }
+
+    // Execute next turn
+    const result = await executeNextTurn(debateId)
+
+    if (!result.success) {
+      // If turn failed, set error state
+      await setDebateError(debateId, result.error ?? 'Turn execution failed')
+      return { success: false, error: result.error ?? 'Turn execution failed' }
+    }
+
+    if (result.isComplete) {
+      console.log(`[Engine] Debate completed after turn: ${debateId}`)
+      const budgetStatus = getBudgetStatus(debateId)
+      debateEvents.emitEvent(debateId, 'debate_completed', {
+        totalTurns: turnCount + 1,
+        durationMs: Date.now() - loopStartTime,
+        totalTokens: budgetStatus.usage?.totalTokens ?? 0,
+        totalCost: budgetStatus.usage?.totalCostUsd ?? 0,
+      })
+      return { success: true }
+    }
+
+    turnCount++
+
+    // Small delay between turns to prevent overwhelming
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  // Safety limit reached
+  await setDebateError(debateId, 'Maximum turn limit reached')
+  return { success: false, error: 'Maximum turn limit reached' }
 }

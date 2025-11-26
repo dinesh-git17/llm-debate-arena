@@ -18,7 +18,7 @@ import type {
 } from '@/types/llm'
 import type { TiktokenModel } from 'tiktoken'
 
-const MODEL = 'gpt-4-turbo'
+const MODEL = 'gpt-5.1'
 const TIKTOKEN_MODEL: TiktokenModel = 'gpt-4'
 
 export class OpenAIProvider extends BaseLLMProvider {
@@ -93,7 +93,7 @@ export class OpenAIProvider extends BaseLLMProvider {
             content: m.content,
           })),
         ],
-        max_tokens: params.maxTokens,
+        max_completion_tokens: params.maxTokens,
         temperature: params.temperature ?? 0.7,
         ...(params.stopSequences ? { stop: params.stopSequences } : {}),
       })
@@ -130,7 +130,7 @@ export class OpenAIProvider extends BaseLLMProvider {
             content: m.content,
           })),
         ],
-        max_tokens: params.maxTokens,
+        max_completion_tokens: params.maxTokens,
         temperature: params.temperature ?? 0.7,
         ...(params.stopSequences ? { stop: params.stopSequences } : {}),
         stream: true,

@@ -1,0 +1,101 @@
+// src/app/(debate)/debate/[id]/summary/client.tsx
+
+'use client'
+
+import Link from 'next/link'
+import { useEffect } from 'react'
+
+import { RevealSection } from '@/components/summary/reveal-section'
+import { ShareSection } from '@/components/summary/share-section'
+import { StatisticsDashboard } from '@/components/summary/statistics-dashboard'
+import { SummaryCard } from '@/components/summary/summary-card'
+import { SummaryNavigation } from '@/components/summary/summary-navigation'
+import { cn } from '@/lib/utils'
+import { useSummaryStore } from '@/store/summary-store'
+
+import type { SummaryResponse } from '@/types/summary'
+
+interface SummaryPageClientProps {
+  initialData: SummaryResponse
+}
+
+export function SummaryPageClient({ initialData }: SummaryPageClientProps) {
+  const status = useSummaryStore((s) => s.status)
+  const error = useSummaryStore((s) => s.error)
+
+  useEffect(() => {
+    useSummaryStore.getState().loadSummary(initialData)
+
+    return () => {
+      useSummaryStore.getState().reset()
+    }
+  }, [initialData])
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-muted-foreground">Loading summary...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md text-center">
+          <div className="text-5xl mb-4">😕</div>
+          <h1 className="text-2xl font-bold text-foreground mb-2">Failed to Load Summary</h1>
+          <p className="text-muted-foreground mb-6">
+            {error ?? 'An unexpected error occurred while loading the debate summary.'}
+          </p>
+          <Link
+            href="/"
+            className={cn(
+              'inline-flex items-center gap-2 px-6 py-3 rounded-xl',
+              'bg-primary text-primary-foreground',
+              'hover:bg-primary/90 transition-colors'
+            )}
+          >
+            Return Home
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Navigation and header */}
+        <SummaryNavigation className="mb-12" />
+
+        {/* Reveal section */}
+        <RevealSection className="mb-16" />
+
+        {/* Divider */}
+        <hr className="border-border my-12" />
+
+        {/* Statistics dashboard */}
+        <StatisticsDashboard className="mb-16" />
+
+        {/* Divider */}
+        <hr className="border-border my-12" />
+
+        {/* Claude's summary */}
+        <SummaryCard className="mb-16" />
+
+        {/* Divider */}
+        <hr className="border-border my-12" />
+
+        {/* Share section */}
+        <ShareSection className="mb-16" />
+
+        {/* Footer spacing */}
+        <div className="h-16" />
+      </div>
+    </div>
+  )
+}
