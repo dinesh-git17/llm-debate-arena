@@ -3,7 +3,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 
 import { RevealSection } from '@/components/summary/reveal-section'
 import { ShareSection } from '@/components/summary/share-section'
@@ -13,6 +13,7 @@ import { SummaryNavigation } from '@/components/summary/summary-navigation'
 import { cn } from '@/lib/utils'
 import { useSummaryStore } from '@/store/summary-store'
 
+import type { JudgeAnalysisResponse } from '@/types/judge'
 import type { SummaryResponse } from '@/types/summary'
 
 interface SummaryPageClientProps {
@@ -24,14 +25,47 @@ interface SummaryPageClientProps {
 export function SummaryPageClient({ initialData, shareUrl, shortCode }: SummaryPageClientProps) {
   const status = useSummaryStore((s) => s.status)
   const error = useSummaryStore((s) => s.error)
+  const hasFetchedSummary = useRef(false)
+
+  // Fetch Claude's judge analysis for the summary section
+  const fetchClaudeSummary = useCallback(async () => {
+    if (hasFetchedSummary.current) return
+    hasFetchedSummary.current = true
+
+    const store = useSummaryStore.getState()
+    store.setSummaryLoading(true)
+
+    try {
+      const response = await fetch(`/api/debate/${initialData.debateId}/judge`)
+      if (!response.ok) {
+        console.error('[Summary] Failed to fetch judge analysis')
+        store.setSummaryLoading(false)
+        return
+      }
+
+      const data = (await response.json()) as JudgeAnalysisResponse
+      if (data.success && data.analysis) {
+        store.setClaudeSummary(data.analysis.overviewSummary)
+      } else {
+        store.setSummaryLoading(false)
+      }
+    } catch (err) {
+      console.error('[Summary] Error fetching judge analysis:', err)
+      store.setSummaryLoading(false)
+    }
+  }, [initialData.debateId])
 
   useEffect(() => {
     useSummaryStore.getState().loadSummary(initialData)
 
+    // Fetch Claude's analysis for the summary section
+    fetchClaudeSummary()
+
     return () => {
       useSummaryStore.getState().reset()
+      hasFetchedSummary.current = false
     }
-  }, [initialData])
+  }, [initialData, fetchClaudeSummary])
 
   if (status === 'loading') {
     return (

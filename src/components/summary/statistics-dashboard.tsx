@@ -52,8 +52,18 @@ function formatNumber(num: number): string {
   return num.toString()
 }
 
+function formatDebateFormat(format: string): string {
+  const formatNames: Record<string, string> = {
+    standard: 'Standard',
+    oxford: 'Oxford',
+    lincoln_douglas: 'Lincoln-Douglas',
+  }
+  return formatNames[format] ?? format
+}
+
 export function StatisticsDashboard({ className }: StatisticsDashboardProps) {
   const statistics = useSummaryStore((s) => s.statistics)
+  const format = useSummaryStore((s) => s.format)
   const formattedDuration = useSummaryStore(selectFormattedDuration)
   const revealState = useSummaryStore((s) => s.revealState)
 
@@ -110,7 +120,7 @@ export function StatisticsDashboard({ className }: StatisticsDashboardProps) {
           value={`${(statistics.avgResponseTimeMs / 1000).toFixed(1)}s`}
         />
         <div className="col-span-2 md:col-span-1">
-          <StatCard icon="🎯" label="Debate Format" value="Oxford" />
+          <StatCard icon="🎯" label="Debate Format" value={formatDebateFormat(format)} />
         </div>
       </div>
 

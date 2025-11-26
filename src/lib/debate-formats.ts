@@ -4,17 +4,37 @@ import type { TurnConfig, TurnType, TurnSpeaker } from '@/types/turn'
 
 /**
  * Base token limits by turn type
+ * Note: These are OUTPUT token limits sent to the API. Set HIGH to prevent mid-sentence cutoffs.
+ * The actual "target" word count is communicated via the prompt (see debater-prompt.ts).
+ * This gives buffer room for LLMs that don't follow word limits precisely.
+ * Rough conversion: 1 token ≈ 0.75 words
  */
 export const TOKEN_LIMITS: Record<TurnType, { min: number; max: number }> = {
-  opening: { min: 100, max: 500 },
-  constructive: { min: 150, max: 600 },
-  rebuttal: { min: 100, max: 500 },
-  cross_examination: { min: 50, max: 300 },
-  closing: { min: 100, max: 400 },
-  moderator_intro: { min: 50, max: 200 },
-  moderator_transition: { min: 20, max: 100 },
-  moderator_intervention: { min: 30, max: 150 },
-  moderator_summary: { min: 200, max: 800 },
+  opening: { min: 400, max: 2000 },
+  constructive: { min: 400, max: 2000 },
+  rebuttal: { min: 400, max: 2000 },
+  cross_examination: { min: 200, max: 1000 },
+  closing: { min: 400, max: 1600 },
+  moderator_intro: { min: 200, max: 800 },
+  moderator_transition: { min: 50, max: 250 },
+  moderator_intervention: { min: 100, max: 400 },
+  moderator_summary: { min: 500, max: 1600 },
+}
+
+/**
+ * Target word counts for debater prompts.
+ * These guide the LLM to structure properly; actual API token limits are higher for buffer.
+ */
+export const TARGET_WORD_COUNTS: Record<TurnType, number> = {
+  opening: 800,
+  constructive: 800,
+  rebuttal: 800,
+  cross_examination: 400,
+  closing: 650,
+  moderator_intro: 300,
+  moderator_transition: 75,
+  moderator_intervention: 150,
+  moderator_summary: 600,
 }
 
 /**
@@ -87,43 +107,56 @@ function createTurn(
 /**
  * Standard format turn sequences by turn count.
  * Turn count refers to debater turns (excluding moderator).
+ *
+ * Structure:
+ * - 4 turns: Opening, Opening, Closing, Closing
+ * - 6 turns: Opening, Opening, Rebuttal, Rebuttal, Closing, Closing
+ * - 8 turns: Opening, Opening, Constructive, Constructive, Rebuttal, Rebuttal, Closing, Closing
+ * - 10+ turns: Adds additional rebuttal rounds
  */
 export function getStandardSequence(turnCount: number): TurnConfig[] {
   const sequence: TurnConfig[] = []
   let order = 0
 
+  // Always start with moderator intro
   sequence.push(createTurn(order++, 'moderator_intro', 'moderator'))
 
+  // Opening statements (always present)
   sequence.push(createTurn(order++, 'opening', 'for'))
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
   sequence.push(createTurn(order++, 'opening', 'against'))
 
-  if (turnCount >= 6) {
+  // Constructive arguments only for 8+ turns
+  if (turnCount >= 8) {
     sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
     sequence.push(createTurn(order++, 'constructive', 'for'))
     sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
     sequence.push(createTurn(order++, 'constructive', 'against'))
   }
 
-  if (turnCount >= 8) {
-    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-    sequence.push(createTurn(order++, 'rebuttal', 'against'))
+  // First rebuttal round for 6+ turns
+  if (turnCount >= 6) {
     sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
     sequence.push(createTurn(order++, 'rebuttal', 'for'))
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+    sequence.push(createTurn(order++, 'rebuttal', 'against'))
   }
 
+  // Additional rebuttal round for 10+ turns
   if (turnCount >= 10) {
     sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-    sequence.push(createTurn(order++, 'rebuttal', 'for'))
-    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
     sequence.push(createTurn(order++, 'rebuttal', 'against'))
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+    sequence.push(createTurn(order++, 'rebuttal', 'for'))
   }
 
+  // Closing statements (always present)
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
   sequence.push(createTurn(order++, 'closing', 'against'))
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
   sequence.push(createTurn(order++, 'closing', 'for'))
 
+  // Moderator summary
   sequence.push(createTurn(order++, 'moderator_summary', 'moderator'))
 
   return sequence
@@ -170,33 +203,52 @@ export function getOxfordSequence(turnCount: number): TurnConfig[] {
 /**
  * Lincoln-Douglas format (value-focused).
  * Traditional LD structure with longer constructives.
+ *
+ * Structure:
+ * - 4 turns: Constructive, Constructive, Closing, Closing
+ * - 6 turns: Constructive, Cross-exam, Constructive, Cross-exam, Closing, Closing
+ * - 8+ turns: Constructive, Cross-exam, Constructive, Cross-exam, Rebuttal, Rebuttal, Closing, Closing
  */
-export function getLincolnDouglasSequence(_turnCount: number): TurnConfig[] {
+export function getLincolnDouglasSequence(turnCount: number): TurnConfig[] {
   const sequence: TurnConfig[] = []
   let order = 0
 
+  // Always start with moderator intro
   sequence.push(createTurn(order++, 'moderator_intro', 'moderator'))
 
+  // Constructive arguments (always present, with longer token limit for LD)
   sequence.push(createTurn(order++, 'constructive', 'for', { maxTokens: 700 }))
-
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-  sequence.push(createTurn(order++, 'cross_examination', 'against'))
 
-  sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+  // Cross-examination after first constructive for 6+ turns
+  if (turnCount >= 6) {
+    sequence.push(createTurn(order++, 'cross_examination', 'against'))
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+  }
+
   sequence.push(createTurn(order++, 'constructive', 'against', { maxTokens: 700 }))
 
-  sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-  sequence.push(createTurn(order++, 'cross_examination', 'for'))
+  // Cross-examination after second constructive for 6+ turns
+  if (turnCount >= 6) {
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+    sequence.push(createTurn(order++, 'cross_examination', 'for'))
+  }
 
-  sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-  sequence.push(createTurn(order++, 'rebuttal', 'for'))
+  // Rebuttals for 8+ turns
+  if (turnCount >= 8) {
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+    sequence.push(createTurn(order++, 'rebuttal', 'for'))
+    sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
+    sequence.push(createTurn(order++, 'rebuttal', 'against'))
+  }
 
+  // Closing statements (always present)
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
-  sequence.push(createTurn(order++, 'rebuttal', 'against'))
-
+  sequence.push(createTurn(order++, 'closing', 'against'))
   sequence.push(createTurn(order++, 'moderator_transition', 'moderator'))
   sequence.push(createTurn(order++, 'closing', 'for'))
 
+  // Moderator summary
   sequence.push(createTurn(order++, 'moderator_summary', 'moderator'))
 
   return sequence

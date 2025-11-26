@@ -53,13 +53,20 @@ function getTurnTypeDisplay(turnType: TurnType | undefined): string {
 
 /**
  * Determine expected turn type based on context
+ * Uses the actual next turn type from the sequence when available
  */
 function getExpectedTurnType(context: ModeratorContext): string {
+  // Use the actual next turn type if provided (preferred)
+  if (context.nextTurnType) {
+    return getTurnTypeDisplay(context.nextTurnType)
+  }
+
+  // Fallback to inference based on debate history (for backwards compatibility)
   const lastTurn = context.debateHistory.at(-1)
   if (!lastTurn) return 'opening statement'
 
   if (lastTurn.turnType === 'opening') {
-    return context.currentTurnNumber <= 2 ? 'opening statement' : 'constructive argument'
+    return context.currentTurnNumber <= 2 ? 'opening statement' : 'rebuttal'
   }
   if (lastTurn.turnType === 'constructive') {
     return 'rebuttal'
@@ -138,7 +145,7 @@ export function compileTransitionPrompt(context: ModeratorContext): CompiledProm
   return {
     systemPrompt,
     userPrompt,
-    maxTokens: 80,
+    maxTokens: 150,
     temperature: 0.5,
   }
 }

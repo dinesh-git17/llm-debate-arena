@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 
 import { DebateHeader } from '@/components/debate/debate-header'
 import { FloatingControls } from '@/components/debate/floating-controls'
@@ -11,8 +11,9 @@ import { ShortcutsHelp } from '@/components/debate/shortcuts-help'
 import { useDebateStream } from '@/hooks/use-debate-stream'
 import { useDebateViewStore } from '@/store/debate-view-store'
 
+import type { DebateHistoryResponse } from '@/app/api/debate/[id]/history/route'
 import type { DebatePhase } from '@/types/debate'
-import type { DebateViewStatus } from '@/types/debate-ui'
+import type { DebateMessage, DebateViewStatus } from '@/types/debate-ui'
 
 interface DebatePageClientProps {
   debateId: string
@@ -47,9 +48,80 @@ export function DebatePageClient({
   initialFormat,
   initialStatus,
 }: DebatePageClientProps) {
-  const { setDebateInfo, setStatus, reset } = useDebateViewStore()
+  const { setDebateInfo, setStatus, setProgress, hydrateMessages, reset } = useDebateViewStore()
+  const hasAutoStarted = useRef(false)
+  const hasHydrated = useRef(false)
+  const previousDebateId = useRef<string | null>(null)
+
+  const autoStartDebate = useCallback(async () => {
+    if (hasAutoStarted.current) return
+    hasAutoStarted.current = true
+
+    try {
+      const response = await fetch(`/api/debate/${debateId}/engine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        console.error('Auto-start failed:', data.error ?? 'Unknown error')
+      }
+    } catch (error) {
+      console.error('Auto-start error:', error)
+    }
+  }, [debateId])
+
+  // Fetch and hydrate existing debate history from server
+  const hydrateFromServer = useCallback(async () => {
+    if (hasHydrated.current) return
+    hasHydrated.current = true
+
+    try {
+      const response = await fetch(`/api/debate/${debateId}/history`)
+      if (!response.ok) return
+
+      const data = (await response.json()) as DebateHistoryResponse
+
+      if (data.messages && data.messages.length > 0) {
+        // Convert server messages to client format
+        const messages: DebateMessage[] = data.messages.map((msg) => ({
+          id: msg.id,
+          speaker: msg.speaker,
+          speakerLabel: msg.speakerLabel,
+          turnType: msg.turnType,
+          content: msg.content,
+          tokenCount: msg.tokenCount,
+          timestamp: new Date(msg.timestamp),
+          isStreaming: false,
+          isComplete: true,
+        }))
+
+        hydrateMessages(messages)
+
+        // Update progress based on loaded history
+        setProgress({
+          currentTurn: data.currentTurnIndex,
+          totalTurns: data.totalTurns,
+          percentComplete: Math.round((data.currentTurnIndex / data.totalTurns) * 100),
+        })
+
+        console.log(`[Debate] Hydrated ${messages.length} messages from server`)
+      }
+    } catch (error) {
+      console.error('[Debate] Failed to hydrate from server:', error)
+    }
+  }, [debateId, hydrateMessages, setProgress])
 
   useEffect(() => {
+    // Reset store only when switching to a DIFFERENT debate
+    if (previousDebateId.current && previousDebateId.current !== debateId) {
+      reset()
+      hasAutoStarted.current = false
+      hasHydrated.current = false
+    }
+    previousDebateId.current = debateId
+
     setDebateInfo({
       debateId,
       topic: initialTopic,
@@ -57,10 +129,27 @@ export function DebatePageClient({
     })
     setStatus(mapPhaseToViewStatus(initialStatus))
 
-    return () => {
-      reset()
+    // Hydrate existing messages from server (for page reload or navigation back)
+    hydrateFromServer()
+
+    // Auto-start debate if status is ready
+    if (initialStatus === 'ready') {
+      autoStartDebate()
     }
-  }, [debateId, initialTopic, initialFormat, initialStatus, setDebateInfo, setStatus, reset])
+
+    // No cleanup reset - we want to preserve messages when navigating away
+    // Messages are only cleared when switching to a different debate
+  }, [
+    debateId,
+    initialTopic,
+    initialFormat,
+    initialStatus,
+    setDebateInfo,
+    setStatus,
+    reset,
+    autoStartDebate,
+    hydrateFromServer,
+  ])
 
   useDebateStream({
     debateId,

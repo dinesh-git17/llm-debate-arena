@@ -1,5 +1,7 @@
 // src/lib/prompts/debater-prompt.ts
 
+import { TARGET_WORD_COUNTS } from '@/lib/debate-formats'
+
 import type { DebateHistoryEntry } from '@/types/prompts'
 import type { TurnType } from '@/types/turn'
 
@@ -92,7 +94,7 @@ export function buildDebaterTurnPrompt(
   position: 'for' | 'against',
   topic: string,
   history: DebateHistoryEntry[],
-  maxTokens: number,
+  _maxTokens: number, // Kept for API compatibility; word count now uses TARGET_WORD_COUNTS
   customRules: string[] = []
 ): string {
   const instructions = TURN_INSTRUCTIONS[turnType] ?? 'Present your argument.'
@@ -122,18 +124,28 @@ ${customRules.map((r) => `- ${r}`).join('\n')}
 ${relevantHistory.map(formatHistoryEntry).join('\n\n')}`
   }
 
-  const estimatedWordCount = Math.round(maxTokens * 0.75)
+  // Use explicit target word count (not derived from maxTokens, which is set high for buffer)
+  const targetWordCount = TARGET_WORD_COUNTS[turnType] ?? 600
   const mustAddressOpponent = turnType === 'rebuttal'
   const noNewArguments = turnType === 'closing'
 
   prompt += `
 
+## CRITICAL: Word Limit (${targetWordCount} words max)
+You MUST stay within approximately **${targetWordCount} words**.
+- Plan your argument structure BEFORE writing to fit this limit
+- Budget your words: intro (~10%), main points (~75%), conclusion (~15%)
+- If running long, CUT less important points rather than rushing the ending
+- NEVER end mid-sentence or mid-thought — always finish with a complete conclusion
+- Include "(Word count: X)" at the end of your response
+
 ## Guidelines
-- Maximum length: approximately ${estimatedWordCount} words
-- Be substantive and specific
-${mustAddressOpponent ? '- You MUST address specific points from your opponent\n' : ''}${noNewArguments ? '- Do NOT introduce new arguments. Synthesize your existing case.\n' : ''}
+- Be substantive and specific within the word limit
+${mustAddressOpponent ? '- You MUST address specific points from your opponent\n' : ''}${noNewArguments ? '- Do NOT introduce new arguments. Synthesize your existing case.\n' : ''}- Structure your response clearly (use headers/bullets if helpful)
+- Save room for a strong, complete concluding statement
+
 ## Your ${getTurnTypeDisplay(turnType)}
-Write your response now.`
+Write your response now. Stay within ~${targetWordCount} words, end with a complete thought, and include your word count.`
 
   return prompt
 }

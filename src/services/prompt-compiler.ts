@@ -63,6 +63,7 @@ export function buildModeratorContext(
     debateHistory,
     currentSpeaker: currentTurnConfig.speaker,
     nextSpeaker,
+    nextTurnType: nextTurnConfig?.type,
     previousTurnContent: previousTurn?.content,
     previousTurnSpeaker: previousTurn?.speaker,
     violations,

@@ -13,6 +13,7 @@ import {
   shouldEndDueToBudget,
 } from '@/services/budget-manager'
 import { getFullDebateSession, updateDebateStatus } from '@/services/debate-service'
+import { getJudgeAnalysis } from '@/services/judge-service'
 import { generateStream } from '@/services/llm/llm-service'
 import {
   buildModeratorContext,
@@ -77,8 +78,8 @@ export async function initializeEngine(debateId: string): Promise<DebateEngineCo
   await storeEngineState(debateId, sequencer.getState())
 
   if (!isBudgetInitialized(debateId)) {
-    initializeDebateBudget(debateId)
-    console.log(`[Engine] Initialized budget tracking: ${debateId}`)
+    initializeDebateBudget(debateId, session.turns)
+    console.log(`[Engine] Initialized budget tracking: ${debateId} (${session.turns} turns)`)
   }
 
   console.log(`[Engine] Initialized new engine: ${debateId}`)
@@ -811,6 +812,12 @@ export async function runDebateLoop(debateId: string): Promise<{
         totalTokens: budgetStatus.usage?.totalTokens ?? 0,
         totalCost: budgetStatus.usage?.totalCostUsd ?? 0,
       })
+
+      // Preload judge analysis in background so it's ready when user visits summary
+      getJudgeAnalysis(debateId).catch((err) => {
+        console.error(`[Engine] Failed to preload judge analysis for ${debateId}:`, err)
+      })
+
       return { success: true }
     }
 
@@ -847,6 +854,12 @@ export async function runDebateLoop(debateId: string): Promise<{
         totalTokens: budgetStatus.usage?.totalTokens ?? 0,
         totalCost: budgetStatus.usage?.totalCostUsd ?? 0,
       })
+
+      // Preload judge analysis in background so it's ready when user visits summary
+      getJudgeAnalysis(debateId).catch((err) => {
+        console.error(`[Engine] Failed to preload judge analysis for ${debateId}:`, err)
+      })
+
       return { success: true }
     }
 

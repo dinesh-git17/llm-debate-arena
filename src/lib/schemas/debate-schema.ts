@@ -8,7 +8,7 @@ export const debateFormSchema = z.object({
     .max(500, 'Topic cannot exceed 500 characters')
     .trim(),
 
-  turns: z.number().int().min(2, 'Minimum 2 turns required').max(10, 'Maximum 10 turns allowed'),
+  turns: z.number().int().min(4, 'Minimum 4 turns required').max(10, 'Maximum 10 turns allowed'),
 
   format: z.enum(['standard', 'oxford', 'lincoln-douglas']),
 
@@ -33,11 +33,14 @@ export const defaultValues: DebateFormValues = {
 }
 
 export const turnOptions = [
-  { value: 2, label: '2 turns', description: 'Quick debate — Opening + Closing only' },
-  { value: 4, label: '4 turns', description: 'Standard — Opening, Argument, Closing' },
-  { value: 6, label: '6 turns', description: 'Extended — Includes rebuttals' },
-  { value: 8, label: '8 turns', description: 'Full — Complete debate format' },
-  { value: 10, label: '10 turns', description: 'Comprehensive — Deep exploration' },
+  { value: 4, label: '4 turns', description: 'Quick — Opening + Closing only' },
+  { value: 6, label: '6 turns', description: 'Standard — Opening + Rebuttal + Closing' },
+  {
+    value: 8,
+    label: '8 turns',
+    description: 'Extended — Opening + Constructive + Rebuttal + Closing',
+  },
+  { value: 10, label: '10 turns', description: 'Full — Adds additional rebuttal rounds' },
 ] as const
 
 export const formatOptions = [

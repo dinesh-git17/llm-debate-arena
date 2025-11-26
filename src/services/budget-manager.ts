@@ -9,9 +9,11 @@ import type { GenerateResult, LLMProviderType } from '@/types/llm'
 
 /**
  * Initialize budget tracking for a new debate
+ * @param debateId - Unique identifier for the debate
+ * @param turnCount - Number of debater turns (used to calculate appropriate budget)
  */
-export function initializeDebateBudget(debateId: string): DebateUsage {
-  return initializeUsage(debateId)
+export function initializeDebateBudget(debateId: string, turnCount?: number): DebateUsage {
+  return initializeUsage(debateId, turnCount)
 }
 
 /**

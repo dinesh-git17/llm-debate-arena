@@ -108,6 +108,7 @@ export async function updateDebateStatus(debateId: string, status: DebatePhase):
 /**
  * Reveals assignment after debate completion.
  * Only call this when debate status is 'completed'.
+ * Returns provider:model format for use with getModelIdentity()
  */
 export async function revealAssignment(
   debateId: string
@@ -119,13 +120,15 @@ export async function revealAssignment(
     return null
   }
 
-  const modelNames: Record<LLMProvider, string> = {
-    chatgpt: 'ChatGPT',
-    grok: 'Grok',
+  // Map internal provider names to LLMProviderType format
+  // getModelIdentity expects format like 'openai:gpt-4' or 'xai:grok'
+  const providerMapping: Record<LLMProvider, string> = {
+    chatgpt: 'openai:gpt-4',
+    grok: 'xai:grok',
   }
 
   return {
-    forModel: modelNames[session.assignment.forPosition],
-    againstModel: modelNames[session.assignment.againstPosition],
+    forModel: providerMapping[session.assignment.forPosition],
+    againstModel: providerMapping[session.assignment.againstPosition],
   }
 }

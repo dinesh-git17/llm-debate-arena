@@ -37,6 +37,7 @@ export interface ModeratorContext {
   debateHistory: DebateHistoryEntry[]
   currentSpeaker?: TurnSpeaker | undefined
   nextSpeaker?: TurnSpeaker | undefined
+  nextTurnType?: TurnType | undefined
   previousTurnContent?: string | undefined
   previousTurnSpeaker?: TurnSpeaker | undefined
   violations?: ViolationRecord[] | undefined

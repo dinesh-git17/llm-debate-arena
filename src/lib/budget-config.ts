@@ -4,13 +4,30 @@ import type { BudgetConfig } from '@/types/budget'
 
 /**
  * Default budget configuration
+ * Note: Token budget must account for both input (context) and output tokens.
+ * Budget scales with turn count - see calculateBudgetForTurns().
  */
 export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
-  maxTokensPerDebate: 50000,
-  maxTokensPerTurn: 2000,
+  maxTokensPerDebate: 250000, // Default for max turns (10); scaled down for fewer turns
+  maxTokensPerTurn: 15000, // Input context + output (context grows as debate progresses)
   warningThresholdPercent: 80,
   hardLimitEnabled: true,
   costLimitUsd: undefined,
+}
+
+/**
+ * Calculate appropriate token budget based on turn count.
+ * More turns = more context accumulation = more tokens needed.
+ */
+export function calculateBudgetForTurns(turnCount: number): number {
+  // Base: ~20k tokens per debater turn (input context grows + output)
+  // Plus moderator overhead: ~5k per moderator turn
+  // Formula: debaterTurns * 20k + moderatorTurns * 5k + 20k buffer
+  const moderatorTurns = turnCount + 2 // intro + transitions + summary
+  const estimatedTokens = turnCount * 20000 + moderatorTurns * 5000 + 20000
+
+  // Minimum 100k, maximum 300k
+  return Math.min(300000, Math.max(100000, estimatedTokens))
 }
 
 /**
@@ -18,8 +35,8 @@ export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
  */
 export function getBudgetConfig(): BudgetConfig {
   return {
-    maxTokensPerDebate: parseInt(process.env.TOKEN_BUDGET_PER_DEBATE ?? '50000', 10),
-    maxTokensPerTurn: parseInt(process.env.MAX_TOKENS_PER_TURN ?? '2000', 10),
+    maxTokensPerDebate: parseInt(process.env.TOKEN_BUDGET_PER_DEBATE ?? '150000', 10),
+    maxTokensPerTurn: parseInt(process.env.MAX_TOKENS_PER_TURN ?? '12000', 10),
     warningThresholdPercent: parseInt(process.env.BUDGET_WARNING_THRESHOLD ?? '80', 10),
     hardLimitEnabled: process.env.BUDGET_HARD_LIMIT !== 'false',
     costLimitUsd: process.env.COST_LIMIT_USD ? parseFloat(process.env.COST_LIMIT_USD) : undefined,

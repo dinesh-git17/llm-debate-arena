@@ -21,6 +21,9 @@ interface DebateViewActions {
   appendToMessage: (id: string, chunk: string) => void
   completeMessage: (id: string, finalContent: string, tokenCount: number) => void
 
+  // Hydrate store with messages from server (for page reload/navigation back)
+  hydrateMessages: (messages: DebateMessage[]) => void
+
   // Message display queue - controls which messages are visible
   markMessageDisplayed: (id: string) => void
   getVisibleMessages: () => DebateMessage[]
@@ -97,6 +100,22 @@ export const useDebateViewStore = create<DebateViewStore>()((set, get) => ({
           : msg
       ),
     })),
+
+  // Hydrate store with messages from server (for page reload/navigation back)
+  // Only adds messages that don't already exist to avoid duplicates
+  hydrateMessages: (messages) =>
+    set((state) => {
+      const existingIds = new Set(state.messages.map((m) => m.id))
+      const newMessages = messages.filter((m) => !existingIds.has(m.id))
+
+      // Also mark all hydrated messages as displayed (no animation needed for historical messages)
+      const allIds = new Set([...existingIds, ...newMessages.map((m) => m.id)])
+
+      return {
+        messages: [...state.messages, ...newMessages],
+        displayedMessageIds: allIds,
+      }
+    }),
 
   // Mark a message as fully displayed (animation complete)
   markMessageDisplayed: (id) =>

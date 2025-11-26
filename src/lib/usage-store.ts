@@ -1,6 +1,6 @@
 // src/lib/usage-store.ts
 
-import { getBudgetConfig } from './budget-config'
+import { calculateBudgetForTurns, getBudgetConfig } from './budget-config'
 
 import type { CostBreakdown, DebateUsage, TurnUsage, UsageStats } from '@/types/budget'
 import type { LLMProviderType } from '@/types/llm'
@@ -13,9 +13,14 @@ const STATS_CACHE_TTL = 60000
 
 /**
  * Initialize usage tracking for a debate
+ * @param debateId - Unique identifier for the debate
+ * @param turnCount - Number of debater turns (used to calculate appropriate budget)
  */
-export function initializeUsage(debateId: string): DebateUsage {
+export function initializeUsage(debateId: string, turnCount?: number): DebateUsage {
   const config = getBudgetConfig()
+
+  // Calculate budget based on turn count if provided, otherwise use default
+  const budgetTokens = turnCount ? calculateBudgetForTurns(turnCount) : config.maxTokensPerDebate
 
   const usage: DebateUsage = {
     debateId,
@@ -24,14 +29,17 @@ export function initializeUsage(debateId: string): DebateUsage {
     totalOutputTokens: 0,
     totalTokens: 0,
     totalCostUsd: 0,
-    budgetTokens: config.maxTokensPerDebate,
-    budgetRemainingTokens: config.maxTokensPerDebate,
+    budgetTokens,
+    budgetRemainingTokens: budgetTokens,
     budgetUtilizationPercent: 0,
     startedAt: new Date(),
     lastUpdatedAt: new Date(),
   }
 
   usageStore.set(debateId, usage)
+  console.log(
+    `[Budget] Initialized for ${debateId}: ${budgetTokens} tokens (${turnCount ?? 'default'} turns)`
+  )
   return usage
 }
 
