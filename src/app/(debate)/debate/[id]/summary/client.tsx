@@ -17,9 +17,11 @@ import type { SummaryResponse } from '@/types/summary'
 
 interface SummaryPageClientProps {
   initialData: SummaryResponse
+  shareUrl?: string
+  shortCode?: string
 }
 
-export function SummaryPageClient({ initialData }: SummaryPageClientProps) {
+export function SummaryPageClient({ initialData, shareUrl, shortCode }: SummaryPageClientProps) {
   const status = useSummaryStore((s) => s.status)
   const error = useSummaryStore((s) => s.error)
 
@@ -91,7 +93,12 @@ export function SummaryPageClient({ initialData }: SummaryPageClientProps) {
         <hr className="border-border my-12" />
 
         {/* Share section */}
-        <ShareSection className="mb-16" />
+        <ShareSection
+          debateId={initialData.debateId}
+          shareUrl={shareUrl}
+          shortCode={shortCode}
+          className="mb-16"
+        />
 
         {/* Footer spacing */}
         <div className="h-16" />

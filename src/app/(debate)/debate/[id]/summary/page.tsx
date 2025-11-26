@@ -4,8 +4,10 @@ import { notFound, redirect } from 'next/navigation'
 
 import { getEngineState } from '@/lib/engine-store'
 import { isValidDebateId } from '@/lib/id-generator'
+import { buildShareMetadata } from '@/lib/og-image'
 import { getProviderDisplayName } from '@/lib/provider-pricing'
 import { getSession } from '@/lib/session-store'
+import { getOrCreateShareSettings } from '@/lib/share-store'
 import { getBudgetStatus } from '@/services/budget-manager'
 import { revealAssignment } from '@/services/debate-service'
 
@@ -26,21 +28,54 @@ export async function generateMetadata({ params }: SummaryPageProps): Promise<Me
     return { title: 'Summary Not Found' }
   }
 
-  const truncatedTopic =
-    session.topic.length > 50 ? `${session.topic.slice(0, 50)}...` : session.topic
+  const assignment = await revealAssignment(id)
+  const forModel = assignment?.forModel ?? 'AI'
+  const againstModel = assignment?.againstModel ?? 'AI'
+
+  const engineState = await getEngineState(id)
+  const turnCount = engineState?.completedTurns?.length ?? 0
+
+  const shareData = buildShareMetadata(
+    id,
+    session.topic,
+    session.format,
+    forModel,
+    againstModel,
+    session.status,
+    turnCount
+  )
+
+  const shareSettings = await getOrCreateShareSettings(id)
 
   return {
-    title: `Summary: ${truncatedTopic}`,
-    description: `AI debate summary and reveal for: ${session.topic}`,
+    title: shareData.title,
+    description: shareData.description,
     openGraph: {
-      title: `AI Debate Summary: ${truncatedTopic}`,
-      description: `See which AI models argued for and against in this debate on: ${session.topic}`,
+      title: shareData.title,
+      description: shareData.description,
+      url: shareData.url,
+      siteName: 'LLM Debate Arena',
       type: 'article',
+      images: [
+        {
+          url: shareData.imageUrl,
+          width: 1200,
+          height: 630,
+          alt: `Debate: ${session.topic}`,
+        },
+      ],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `AI Debate Summary: ${truncatedTopic}`,
-      description: `See which AI models argued for and against in this debate on: ${session.topic}`,
+      title: shareData.title,
+      description: shareData.description,
+      images: [shareData.imageUrl],
+    },
+    alternates: {
+      canonical: shareData.url,
+    },
+    other: {
+      'share-url': shareSettings.shareUrl,
     },
   }
 }
@@ -116,5 +151,13 @@ export default async function SummaryPage({ params }: SummaryPageProps) {
     assignment,
   }
 
-  return <SummaryPageClient initialData={summaryData} />
+  const shareSettings = await getOrCreateShareSettings(id)
+
+  return (
+    <SummaryPageClient
+      initialData={summaryData}
+      shareUrl={shareSettings.shareUrl}
+      shortCode={shareSettings.shortCode}
+    />
+  )
 }
