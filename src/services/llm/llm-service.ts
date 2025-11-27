@@ -2,6 +2,7 @@
 
 import {
   createProviderLogger,
+  logLLMRequest,
   recordLLMRequest,
   recordLLMFailure,
   recordLLMSuccess,
@@ -57,7 +58,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
         consumeCapacity(provider.providerType, result.totalTokens)
       }
 
-      // Record successful LLM request
+      // Record successful LLM request (metrics + Supabase)
       recordLLMRequest(
         provider.providerType,
         result.inputTokens,
@@ -65,6 +66,16 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
         result.latencyMs,
         0, // costCents - calculated elsewhere
         true
+      )
+      logLLMRequest(
+        provider.providerType,
+        '', // debateId not available here
+        0, // turnNumber not available here
+        result.latencyMs,
+        { prompt: result.inputTokens, completion: result.outputTokens },
+        true,
+        undefined,
+        result.model
       )
       recordLLMSuccess(provider.providerType)
 
@@ -75,6 +86,15 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
         errorType: error instanceof LLMError ? error.type : 'unknown',
       })
       recordLLMRequest(provider.providerType, 0, 0, latencyMs, 0, false)
+      logLLMRequest(
+        provider.providerType,
+        '',
+        0,
+        latencyMs,
+        { prompt: 0, completion: 0 },
+        false,
+        error instanceof Error ? error : undefined
+      )
       recordLLMFailure(provider.providerType)
       throw error
     }
@@ -133,8 +153,18 @@ export async function* generateStream(
       consumeCapacity(provider.providerType, inputTokens + outputTokens)
     }
 
-    // Record successful streaming request
+    // Record successful streaming request (metrics + Supabase)
     recordLLMRequest(provider.providerType, inputTokens, outputTokens, latencyMs, 0, true)
+    logLLMRequest(
+      provider.providerType,
+      '', // debateId not available here
+      0, // turnNumber not available here
+      latencyMs,
+      { prompt: inputTokens, completion: outputTokens },
+      true,
+      undefined,
+      provider.info.model
+    )
     recordLLMSuccess(provider.providerType)
 
     return {
@@ -151,6 +181,15 @@ export async function* generateStream(
     const latencyMs = Date.now() - startTime
     log.error('LLM stream request failed', error instanceof Error ? error : null)
     recordLLMRequest(provider.providerType, 0, 0, latencyMs, 0, false)
+    logLLMRequest(
+      provider.providerType,
+      '',
+      0,
+      latencyMs,
+      { prompt: 0, completion: 0 },
+      false,
+      error instanceof Error ? error : undefined
+    )
     recordLLMFailure(provider.providerType)
     throw error
   }

@@ -3,7 +3,7 @@
 
 import { NextResponse } from 'next/server'
 
-import { metrics } from '@/lib/logging'
+import { metrics, supabaseLogWriter } from '@/lib/logging'
 
 import type { NextRequest } from 'next/server'
 
@@ -27,9 +27,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const format = request.nextUrl.searchParams.get('format') ?? 'prometheus'
+  const snapshot = request.nextUrl.searchParams.get('snapshot') === 'true'
+
+  // Get aggregated metrics
+  const aggregated = metrics.getAggregatedMetrics('5m')
+
+  // Optionally write snapshot to Supabase (call with ?snapshot=true)
+  if (snapshot && supabaseLogWriter.isActive()) {
+    await supabaseLogWriter.writeMetricsSnapshot(
+      aggregated.system,
+      {
+        started: aggregated.debates.started,
+        completed: aggregated.debates.completed,
+        errored: aggregated.debates.errored,
+      },
+      aggregated as unknown as Record<string, unknown>
+    )
+  }
 
   if (format === 'json') {
-    const aggregated = metrics.getAggregatedMetrics('5m')
     return NextResponse.json(aggregated)
   }
 
