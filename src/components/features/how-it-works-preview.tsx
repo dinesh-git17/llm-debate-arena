@@ -1,8 +1,9 @@
 // src/components/features/how-it-works-preview.tsx
 'use client'
 
-import { Lightbulb, MessageSquare, Scale, Sparkles } from 'lucide-react'
+import { Lightbulb, MessageSquare, Scale } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { MdInsights } from 'react-icons/md'
 
 import { Container } from '@/components/ui/container'
 import { cn } from '@/lib/utils'
@@ -28,7 +29,7 @@ const steps = [
   },
   {
     number: 4,
-    icon: Sparkles,
+    icon: MdInsights,
     title: 'Get Insights',
     description: 'Summary and verdict from the debate',
   },
