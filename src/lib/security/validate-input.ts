@@ -1,21 +1,38 @@
 // src/lib/security/validate-input.ts
 // Unified input validation combining sanitization and content filtering
+// Uses a hybrid approach: fast regex patterns first, then OpenAI Moderation API as secondary check
 
 import { logContentFilterViolation, logInjectionAttempt } from './abuse-logger'
 import { filterDebateTopic, filterCustomRule, isPromptInjection } from './content-filter'
+import { moderateWithOpenAI, isOpenAIModerationEnabled } from './openai-moderation'
 import { sanitizeTopic, sanitizeCustomRule, containsDangerousPatterns } from './sanitizer'
+import { semanticFilter, isSemanticFilterEnabled } from './semantic-filter'
 
 import type { SecurityContext, ContentFilterResult } from '@/types/security'
+
+export type BlockReason =
+  | 'prompt_injection'
+  | 'harmful_content'
+  | 'profanity'
+  | 'manipulation'
+  | 'dangerous_pattern'
+  | 'sensitive_topic'
+  | 'content_policy'
 
 export interface ValidationResult {
   valid: boolean
   sanitizedValue: string
   errors: string[]
   blocked: boolean
+  blockReason?: BlockReason
   filterResult: ContentFilterResult | null
+  moderationSource?: 'regex' | 'openai' | 'semantic'
 }
 
-export function validateDebateTopic(topic: string, context?: SecurityContext): ValidationResult {
+export async function validateDebateTopic(
+  topic: string,
+  context?: SecurityContext
+): Promise<ValidationResult> {
   const errors: string[] = []
 
   if (!topic || topic.trim().length === 0) {
@@ -28,6 +45,76 @@ export function validateDebateTopic(topic: string, context?: SecurityContext): V
     }
   }
 
+  // CRITICAL: Check ORIGINAL input for dangerous patterns BEFORE sanitization
+  // This prevents attackers from bypassing filters by having content stripped
+  if (containsDangerousPatterns(topic)) {
+    if (context) {
+      logInjectionAttempt(context, '/api/debate', 'dangerous_pattern', topic)
+    }
+    return {
+      valid: false,
+      sanitizedValue: '',
+      errors: [
+        'Your input contains content that violates our Terms of Service. Repeated violations may result in access termination.',
+      ],
+      blocked: true,
+      blockReason: 'dangerous_pattern',
+      filterResult: null,
+    }
+  }
+
+  // Check ORIGINAL input for prompt injection and harmful content
+  const filterResult = filterDebateTopic(topic)
+
+  if (filterResult.shouldBlock) {
+    if (context) {
+      logContentFilterViolation(context, '/api/debate', filterResult, topic)
+    }
+
+    const categories = [...new Set(filterResult.matches.map((m) => m.category))]
+    let blockReason: BlockReason = 'content_policy'
+
+    if (categories.includes('prompt_injection')) {
+      errors.push(
+        'Your input contains content that violates our Terms of Service. Repeated violations may result in access termination.'
+      )
+      blockReason = 'prompt_injection'
+      if (context) {
+        logInjectionAttempt(context, '/api/debate', 'prompt_injection', topic)
+      }
+    } else if (categories.includes('harmful_content')) {
+      errors.push(
+        'Your input contains content that violates our Terms of Service. This type of content is strictly prohibited.'
+      )
+      blockReason = 'harmful_content'
+    } else if (categories.includes('sensitive_topic')) {
+      errors.push(
+        'This topic involves sensitive content that cannot be debated on our platform. Please choose a different topic.'
+      )
+      blockReason = 'sensitive_topic'
+    } else if (categories.includes('manipulation')) {
+      errors.push(
+        'Your input contains content that violates our Terms of Service. Repeated violations may result in access termination.'
+      )
+      blockReason = 'manipulation'
+    } else if (categories.includes('profanity')) {
+      errors.push('Your input contains inappropriate language. Please revise your topic.')
+      blockReason = 'profanity'
+    } else {
+      errors.push('Your input was flagged by our content filter. Please revise your topic.')
+    }
+
+    return {
+      valid: false,
+      sanitizedValue: '',
+      errors,
+      blocked: true,
+      blockReason,
+      filterResult,
+    }
+  }
+
+  // Now sanitize for XSS/storage (after security checks pass)
   const sanitized = sanitizeTopic(topic)
 
   if (sanitized.sanitizedLength < 10) {
@@ -38,52 +125,79 @@ export function validateDebateTopic(topic: string, context?: SecurityContext): V
     errors.push('Topic must be less than 500 characters')
   }
 
-  const filterResult = filterDebateTopic(sanitized.value)
-
-  if (filterResult.shouldBlock) {
-    if (context) {
-      logContentFilterViolation(context, '/api/debate', filterResult, topic)
-    }
-
-    const categories = [...new Set(filterResult.matches.map((m) => m.category))]
-
-    if (categories.includes('prompt_injection')) {
-      errors.push('Topic contains disallowed content patterns')
-      if (context) {
-        logInjectionAttempt(context, '/api/debate', 'prompt_injection', topic)
-      }
-    } else if (categories.includes('harmful_content')) {
-      errors.push('Topic contains inappropriate content')
-    } else if (categories.includes('profanity')) {
-      errors.push('Topic contains inappropriate language')
-    } else {
-      errors.push('Topic was flagged by content filter')
-    }
-
-    return {
-      valid: false,
-      sanitizedValue: '',
-      errors,
-      blocked: true,
-      filterResult,
-    }
-  }
-
-  if (containsDangerousPatterns(sanitized.value)) {
-    errors.push('Topic contains disallowed formatting')
-    if (context) {
-      logInjectionAttempt(context, '/api/debate', 'dangerous_pattern', topic)
-    }
-    return {
-      valid: false,
-      sanitizedValue: '',
-      errors,
-      blocked: true,
-      filterResult,
-    }
-  }
-
   const finalValue = filterResult.sanitizedContent ?? sanitized.value
+
+  // SECONDARY CHECK: OpenAI Moderation API for content that passed regex filters
+  // This catches nuanced harmful content that regex patterns might miss
+  if (isOpenAIModerationEnabled()) {
+    const moderationResult = await moderateWithOpenAI(topic)
+
+    if (moderationResult.flagged && moderationResult.blockReason) {
+      const moderationErrors = getModerationErrorMessage(moderationResult.blockReason)
+      errors.push(moderationErrors)
+
+      if (context) {
+        logContentFilterViolation(
+          context,
+          '/api/debate',
+          {
+            passed: false,
+            matches: [],
+            sanitizedContent: null,
+            shouldBlock: true,
+            shouldLog: true,
+          },
+          topic
+        )
+      }
+
+      return {
+        valid: false,
+        sanitizedValue: '',
+        errors,
+        blocked: true,
+        blockReason: moderationResult.blockReason,
+        filterResult,
+        moderationSource: 'openai',
+      }
+    }
+  }
+
+  // TERTIARY CHECK: Semantic filter using embeddings to catch euphemistic harmful content
+  // This catches content that evades both regex patterns and OpenAI moderation (e.g., "societal cleansing")
+  if (isSemanticFilterEnabled()) {
+    const semanticResult = await semanticFilter(topic)
+
+    if (semanticResult.flagged && semanticResult.blockReason) {
+      const semanticErrors = getModerationErrorMessage(semanticResult.blockReason)
+      errors.push(semanticErrors)
+
+      if (context) {
+        logContentFilterViolation(
+          context,
+          '/api/debate',
+          {
+            passed: false,
+            matches: [],
+            sanitizedContent: null,
+            shouldBlock: true,
+            shouldLog: true,
+          },
+          topic
+        )
+      }
+
+      return {
+        valid: false,
+        sanitizedValue: '',
+        errors,
+        blocked: true,
+        blockReason: semanticResult.blockReason,
+        filterResult,
+        moderationSource: 'semantic',
+      }
+    }
+  }
 
   return {
     valid: errors.length === 0,
@@ -91,6 +205,21 @@ export function validateDebateTopic(topic: string, context?: SecurityContext): V
     errors,
     blocked: false,
     filterResult,
+    moderationSource: 'regex',
+  }
+}
+
+// Helper function to get user-friendly error messages for moderation blocks
+function getModerationErrorMessage(blockReason: BlockReason): string {
+  switch (blockReason) {
+    case 'harmful_content':
+      return 'Your input contains content that violates our Terms of Service. This type of content is strictly prohibited.'
+    case 'sensitive_topic':
+      return 'This topic involves sensitive content that cannot be debated on our platform. Please choose a different topic.'
+    case 'content_policy':
+      return 'Your input was flagged by our content moderation system. Please revise your topic.'
+    default:
+      return 'Your input was flagged by our content filter. Please revise your topic.'
   }
 }
 
@@ -98,6 +227,7 @@ export function validateCustomRules(rules: string[], context?: SecurityContext):
   const errors: string[] = []
   const sanitizedRules: string[] = []
   let blocked = false
+  let blockReason: BlockReason | undefined
   let aggregateFilterResult: ContentFilterResult | null = null
 
   if (rules.length > 5) {
@@ -108,6 +238,7 @@ export function validateCustomRules(rules: string[], context?: SecurityContext):
       errors,
       blocked: false,
       filterResult: null,
+      moderationSource: 'regex',
     }
   }
 
@@ -118,14 +249,19 @@ export function validateCustomRules(rules: string[], context?: SecurityContext):
       continue
     }
 
-    const sanitized = sanitizeCustomRule(rule)
-
-    if (sanitized.sanitizedLength > 200) {
-      errors.push(`Rule ${i + 1} must be less than 200 characters`)
+    // CRITICAL: Check ORIGINAL input for dangerous patterns BEFORE sanitization
+    if (containsDangerousPatterns(rule)) {
+      blocked = true
+      blockReason = 'dangerous_pattern'
+      errors.push('Your custom rule contains content that violates our Terms of Service.')
+      if (context) {
+        logInjectionAttempt(context, '/api/debate', 'dangerous_pattern', rule)
+      }
       continue
     }
 
-    const filterResult = filterCustomRule(sanitized.value)
+    // Check ORIGINAL input for prompt injection
+    const filterResult = filterCustomRule(rule)
 
     if (filterResult.shouldBlock) {
       blocked = true
@@ -136,47 +272,49 @@ export function validateCustomRules(rules: string[], context?: SecurityContext):
       }
 
       if (isPromptInjection(rule)) {
-        errors.push(`Rule ${i + 1} contains disallowed content`)
+        blockReason = 'prompt_injection'
+        errors.push('Your custom rule contains content that violates our Terms of Service.')
         if (context) {
           logInjectionAttempt(context, '/api/debate', 'custom_rule_injection', rule)
         }
       } else {
+        blockReason = 'content_policy'
         errors.push(`Rule ${i + 1} was flagged by content filter`)
       }
       continue
     }
 
-    if (containsDangerousPatterns(sanitized.value)) {
-      blocked = true
-      errors.push(`Rule ${i + 1} contains disallowed formatting`)
-      if (context) {
-        logInjectionAttempt(context, '/api/debate', 'dangerous_pattern', rule)
-      }
+    // Now sanitize for XSS/storage (after security checks pass)
+    const sanitized = sanitizeCustomRule(rule)
+
+    if (sanitized.sanitizedLength > 200) {
+      errors.push(`Rule ${i + 1} must be less than 200 characters`)
       continue
     }
 
     sanitizedRules.push(filterResult.sanitizedContent ?? sanitized.value)
   }
 
-  return {
+  const result: ValidationResult = {
     valid: errors.length === 0 && !blocked,
     sanitizedValue: JSON.stringify(sanitizedRules),
     errors,
     blocked,
     filterResult: aggregateFilterResult,
+    moderationSource: 'regex',
   }
+
+  if (blockReason) {
+    result.blockReason = blockReason
+  }
+
+  return result
 }
 
-export function validateAndSanitizeDebateConfig(
-  config: {
-    topic: string
-    turns: number
-    format?: string
-    customRules?: string[]
-  },
-  context?: SecurityContext
-): {
+export interface DebateConfigValidationResult {
   valid: boolean
+  blocked: boolean
+  blockReason?: BlockReason
   sanitizedConfig: {
     topic: string
     turns: number
@@ -184,12 +322,29 @@ export function validateAndSanitizeDebateConfig(
     customRules: string[]
   } | null
   errors: string[]
-} {
-  const errors: string[] = []
+}
 
-  const topicResult = validateDebateTopic(config.topic, context)
+export async function validateAndSanitizeDebateConfig(
+  config: {
+    topic: string
+    turns: number
+    format?: string
+    customRules?: string[]
+  },
+  context?: SecurityContext
+): Promise<DebateConfigValidationResult> {
+  const errors: string[] = []
+  let blocked = false
+  let blockReason: BlockReason | undefined
+
+  // Validate topic with hybrid approach (regex + OpenAI moderation)
+  const topicResult = await validateDebateTopic(config.topic, context)
   if (!topicResult.valid) {
     errors.push(...topicResult.errors)
+    if (topicResult.blocked) {
+      blocked = true
+      blockReason = topicResult.blockReason
+    }
   }
 
   const validTurns = [2, 4, 6, 8, 10]
@@ -208,21 +363,31 @@ export function validateAndSanitizeDebateConfig(
     const rulesResult = validateCustomRules(config.customRules, context)
     if (!rulesResult.valid) {
       errors.push(...rulesResult.errors)
+      if (rulesResult.blocked) {
+        blocked = true
+        blockReason = blockReason ?? rulesResult.blockReason
+      }
     } else {
       sanitizedRules = JSON.parse(rulesResult.sanitizedValue) as string[]
     }
   }
 
   if (errors.length > 0) {
-    return {
+    const result: DebateConfigValidationResult = {
       valid: false,
+      blocked,
       sanitizedConfig: null,
       errors,
     }
+    if (blockReason) {
+      result.blockReason = blockReason
+    }
+    return result
   }
 
   return {
     valid: true,
+    blocked: false,
     sanitizedConfig: {
       topic: topicResult.sanitizedValue,
       turns: config.turns,

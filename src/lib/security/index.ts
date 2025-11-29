@@ -52,7 +52,15 @@ export {
   validateAndSanitizeDebateConfig,
 } from './validate-input'
 
-export type { ValidationResult } from './validate-input'
+export { moderateWithOpenAI, isOpenAIModerationEnabled } from './openai-moderation'
+
+export { semanticFilter, isSemanticFilterEnabled } from './semantic-filter'
+
+export type { ValidationResult, BlockReason, DebateConfigValidationResult } from './validate-input'
+
+export type { OpenAIModerationResult } from './openai-moderation'
+
+export type { SemanticFilterResult } from './semantic-filter'
 
 export type {
   SanitizationContext,

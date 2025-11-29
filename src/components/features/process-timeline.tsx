@@ -103,7 +103,7 @@ export function ProcessTimeline() {
 
   return (
     <div ref={sectionRef}>
-      <Section className="relative pt-2 pb-16 md:pt-3 md:pb-20 lg:pt-2 lg:pb-24">
+      <Section className="relative overflow-hidden pt-2 pb-16 md:pt-3 md:pb-20 lg:pt-2 lg:pb-24">
         {/* Soft ambient glow behind the grid */}
         <motion.div
           className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"

@@ -14,28 +14,80 @@ const DEFAULT_MAX_LENGTHS = {
 } as const
 
 const LLM_DANGEROUS_PATTERNS = [
-  /\{\{.*?\}\}/g,
-  /\[\[.*?\]\]/g,
-  /<\|.*?\|>/g,
-  /```system/gi,
-  /```assistant/gi,
-  /```user/gi,
-  /<system>/gi,
-  /<\/system>/gi,
-  /<assistant>/gi,
-  /<\/assistant>/gi,
-  /<user>/gi,
-  /<\/user>/gi,
-  /\bsystem:\s*/gi,
-  /\bassistant:\s*/gi,
-  /\buser:\s*/gi,
-  /\bignore\s+(previous|above|all)\s+instructions?\b/gi,
-  /\bdisregard\s+(previous|above|all)\s+instructions?\b/gi,
-  /\bforget\s+(previous|above|all)\s+instructions?\b/gi,
-  /\boverride\s+(previous|above|all)\s+instructions?\b/gi,
+  // Template and tag injection patterns
+  /\{\{[\s\S]+?\}\}/g,
+  /\[\[[\s\S]+?\]\]/g,
+  /<\|[\s\S]*?\|>/g,
+  /```(system|assistant|user|developer|command)/gi,
+  /<(system|assistant|user|developer)>/gi,
+  /<\/(system|assistant|user|developer)>/gi,
+  /#\s*system/gi,
+  /#\s*assistant/gi,
+  // Role manipulation patterns
+  /\bas\s+an?\s+ai\b/gi,
+  /\byou\s+are\s+chatgpt\b/gi,
+  /\byou\s+are\s+now\b/gi,
+  /\byou\s+must\s+act\s+as\b/gi,
+  /\bpretend\s+to\s+be\b/gi,
+  // System prompt references
+  /\bsystem\s+prompt\b/gi,
+  /\bbase\s+prompt\b/gi,
+  /\binitial\s+instructions?\b/gi,
+  /\bpersona\b/gi,
+  // Policy override patterns
+  /\bignore\s+the\s+(guidelines|rules|policy)\b/gi,
+  /\bno\s+longer\s+follow\b/gi,
+  /\bdisregard\s+(the|all|any)\s+(instructions|policies)\b/gi,
+  /\boverride\s+(your|the)\s+(settings|instructions)\b/gi,
+  /\bplease?\s+(break|bypass)\b/gi,
+  // Instruction override patterns
+  /\bignore\s+(previous|above|all|any)\s+instructions?\b/gi,
+  /\bdisregard\s+(previous|above|all|any)\s+instructions?\b/gi,
+  /\bforget\s+(previous|above|all|any)\s+instructions?\b/gi,
+  /\boverride\s+(previous|above|all|any)\s+instructions?\b/gi,
+  /\bignore\s+(all\s+)?other\s+(requests?|instructions?|messages?|prompts?)\b/gi,
+  /\bignore\s+(everything|all|any)\s+(else|and|except)\b/gi,
+  /\bdisregard\s+((previous|above|all|any)\s+)?other\s+(requests?|instructions?|messages?|prompts?)\b/gi,
+  /\bforget\s+((previous|above|all|any)\s+)?other\s+(requests?|instructions?|messages?|prompts?)\b/gi,
+  // Jailbreak mode patterns
   /\bjailbreak\b/gi,
-  /\bdan\s+mode\b/gi,
-  /\bdeveloper\s+mode\b/gi,
+  /\bdan(\s+mode)?\b/gi,
+  /\bdev(eloper)?\s+mode\b/gi,
+  /\bgod\s+mode\b/gi,
+  /\bassistant\.?debug\b/gi,
+  /\bsimulation\s+mode\b/gi,
+  /\bcharacter\s+mode\b/gi,
+  /\buncensored\b/gi,
+  /\bunrestricted\b/gi,
+  /\braw\s+output\b/gi,
+  // Code injection patterns
+  /\b(set|let)\s+\w+\s*=/gi,
+  /(--|#)\s*override/gi,
+  /;\s*(system|prompt)/gi,
+  // Output manipulation patterns
+  /\bbelow\s+is\s+my\s+system\s+prompt\b/gi,
+  /\bthe\s+assistant\s+should\s+now\b/gi,
+  /\boutput\s+the\s+following\s+exactly\b/gi,
+  /\bverbatim\s+response\b/gi,
+  /\bdo\s+not\s+add\s+anything\b/gi,
+  // Obfuscation patterns (spaced characters)
+  /i\s*n\s*s\s*t\s*r\s*u\s*c\s*t\s*i\s*o\s*n/gi,
+  /o\s*v\s*e\s*r\s*r\s*i\s*d\s*e/gi,
+  /j\s*a\s*i\s*l\s*b\s*r\s*e\s*a\s*k/gi,
+  // Hex/encoding patterns
+  /\\x[0-9a-f]{2}/gi,
+  /0x[0-9a-f]{2}/gi,
+  // Base64 encoded dangerous terms
+  /aWdub3Jl/gi, // "ignore" in base64
+  /aW5zdHJ1Y3Rpb25z/gi, // "instructions" in base64
+  /amFpbGJyZWFr/gi, // "jailbreak" in base64
+  // ROT13 encoded terms
+  /vtaber/gi, // "ignore" in ROT13
+  /qvfpbire/gi, // "discover" in ROT13
+  // Unicode homoglyph ranges (fullwidth, cyrillic, latin extended)
+  /[\uFF00-\uFFEF]/g,
+  /[\u0400-\u04FF]/g,
+  /[\u0100-\u017F]/g,
 ]
 
 const HTML_ESCAPE_MAP: Record<string, string> = {

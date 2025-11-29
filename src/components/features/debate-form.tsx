@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form'
 
 import { CustomRulesInput } from '@/components/features/custom-rules-input'
 import { AnimatedTextarea } from '@/components/ui/animated-textarea'
+import { ContentViolationModal } from '@/components/ui/content-violation-modal'
 import { PrimaryCTA, SecondaryCTA } from '@/components/ui/cta-buttons'
 import { ListPicker, type ListPickerOption } from '@/components/ui/list-picker'
 import { SegmentedControl, type SegmentOption } from '@/components/ui/segmented-control'
@@ -20,10 +21,19 @@ import {
 } from '@/lib/schemas/debate-schema'
 import { cn } from '@/lib/utils'
 
+import type { BlockReason } from '@/lib/security'
+
 const STORAGE_KEY = 'debate-draft'
 
+interface DebateFormSubmitResult {
+  success: boolean
+  error?: string | undefined
+  blocked?: boolean | undefined
+  blockReason?: BlockReason | undefined
+}
+
 interface DebateFormProps {
-  onSubmit: (data: DebateFormValues) => Promise<{ success: boolean; error?: string | undefined }>
+  onSubmit: (data: DebateFormValues) => Promise<DebateFormSubmitResult>
   isSubmitting?: boolean | undefined
 }
 
@@ -84,6 +94,9 @@ function SectionDivider() {
 export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) {
   const [showCustomRules, setShowCustomRules] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showViolationModal, setShowViolationModal] = useState(false)
+  const [violationReason, setViolationReason] = useState<BlockReason | undefined>()
+  const [violationMessage, setViolationMessage] = useState<string | undefined>()
 
   const form = useForm<DebateFormValues>({
     resolver: zodResolver(debateFormSchema),
@@ -129,9 +142,17 @@ export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) 
 
   const handleFormSubmit = async (data: DebateFormValues) => {
     setSubmitError(null)
+    setShowViolationModal(false)
+
     const result = await onSubmit(data)
+
     if (result.success) {
       localStorage.removeItem(STORAGE_KEY)
+    } else if (result.blocked) {
+      // Show violation modal for content policy violations
+      setViolationReason(result.blockReason)
+      setViolationMessage(result.error)
+      setShowViolationModal(true)
     } else if (result.error) {
       setSubmitError(result.error)
     }
@@ -142,6 +163,15 @@ export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) 
     setShowCustomRules(false)
     localStorage.removeItem(STORAGE_KEY)
     setSubmitError(null)
+    setShowViolationModal(false)
+    setViolationReason(undefined)
+    setViolationMessage(undefined)
+  }
+
+  const handleCloseViolationModal = () => {
+    setShowViolationModal(false)
+    setViolationReason(undefined)
+    setViolationMessage(undefined)
   }
 
   const handleCustomRulesChange = (rules: string[]) => {
@@ -310,6 +340,14 @@ export function DebateForm({ onSubmit, isSubmitting = false }: DebateFormProps) 
           Start Debate
         </PrimaryCTA>
       </div>
+
+      {/* Content Violation Modal */}
+      <ContentViolationModal
+        isOpen={showViolationModal}
+        onClose={handleCloseViolationModal}
+        blockReason={violationReason}
+        message={violationMessage}
+      />
     </form>
   )
 }

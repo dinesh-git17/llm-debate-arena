@@ -35,9 +35,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         )
       }
 
-      // Second pass: Security validation and sanitization
+      // Second pass: Security validation and sanitization (hybrid: regex + OpenAI moderation)
       const securityContext = extractSecurityContext(request)
-      const securityValidation = validateAndSanitizeDebateConfig(
+      const securityValidation = await validateAndSanitizeDebateConfig(
         {
           topic: validated.data.topic,
           turns: validated.data.turns,

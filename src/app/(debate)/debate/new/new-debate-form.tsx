@@ -23,7 +23,12 @@ export function NewDebateForm() {
         router.push(`/debate/${result.debateId}`)
         return { success: true }
       }
-      return { success: false, error: result.error ?? 'Failed to create debate' }
+      return {
+        success: false,
+        error: result.error ?? 'Failed to create debate',
+        blocked: result.blocked,
+        blockReason: result.blockReason,
+      }
     } catch {
       return { success: false, error: 'An unexpected error occurred' }
     } finally {

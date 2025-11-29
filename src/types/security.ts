@@ -24,6 +24,7 @@ export type ContentFilterCategory =
   | 'prompt_injection'
   | 'harmful_content'
   | 'manipulation'
+  | 'sensitive_topic'
   | 'pii'
   | 'spam'
 

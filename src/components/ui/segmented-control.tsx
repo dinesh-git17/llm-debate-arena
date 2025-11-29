@@ -63,7 +63,10 @@ export function SegmentedControl<T extends string | number = string>({
         role="radiogroup"
         aria-label={name}
         className={cn(
-          'relative inline-flex w-full rounded-xl p-1',
+          'relative w-full rounded-xl p-1',
+          // Grid layout: 2 columns on mobile, flex row on sm+
+          'grid grid-cols-2 gap-1',
+          'sm:flex sm:flex-row sm:gap-0',
           // Light mode
           'bg-neutral-100',
           // Dark mode
@@ -74,10 +77,11 @@ export function SegmentedControl<T extends string | number = string>({
           disabled && 'opacity-50 pointer-events-none'
         )}
       >
-        {/* Animated selection indicator */}
+        {/* Animated selection indicator - hidden on mobile due to grid layout */}
         <div
           className={cn(
             'absolute top-1 bottom-1 rounded-lg',
+            'hidden sm:block',
             // Light mode - white pill
             'bg-white',
             'shadow-[0_1px_3px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.06)]',
@@ -122,10 +126,21 @@ export function SegmentedControl<T extends string | number = string>({
               }}
               disabled={disabled}
               className={cn(
-                'relative z-10 flex-1 px-4 py-2.5 rounded-lg',
+                'relative z-10 px-4 py-2.5 rounded-lg',
+                'sm:flex-1',
                 'text-sm font-medium text-center',
                 'transition-colors duration-200',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1',
+                // Last item spans full width if odd number of options (mobile only)
+                index === options.length - 1 &&
+                  options.length % 2 === 1 &&
+                  'col-span-2 sm:col-span-1',
+                // Mobile selected state (since indicator is hidden)
+                isSelected && [
+                  'sm:bg-transparent',
+                  'bg-white dark:bg-white/[0.12]',
+                  'shadow-[0_1px_3px_rgba(0,0,0,0.08)] sm:shadow-none',
+                ],
                 // Text colors
                 isSelected
                   ? 'text-neutral-900 dark:text-white'
