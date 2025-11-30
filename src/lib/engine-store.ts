@@ -2,9 +2,38 @@
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
 
+import { Redis } from '@upstash/redis'
+
 import type { DebateEngineState, SerializedEngineState, Turn } from '@/types/turn'
 
-const engineStore = new Map<string, string>()
+// Redis client - initialized lazily
+let redisClient: Redis | null = null
+
+function getRedisClient(): Redis | null {
+  if (redisClient) return redisClient
+
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  if (url && token) {
+    redisClient = new Redis({ url, token })
+    return redisClient
+  }
+
+  return null
+}
+
+// In-memory fallback for local development (with HMR-safe global)
+const globalForStore = globalThis as unknown as {
+  engineStore: Map<string, string> | undefined
+}
+const memoryStore = globalForStore.engineStore ?? new Map<string, string>()
+if (process.env.NODE_ENV === 'development') {
+  globalForStore.engineStore = memoryStore
+}
+
+const REDIS_KEY_PREFIX = 'debate:engine:'
+const ENGINE_TTL_SECONDS = 24 * 60 * 60 // 24 hours
 
 const SALT = 'debate-lab-engine-salt'
 
@@ -109,7 +138,14 @@ function decrypt(encryptedData: string): string {
 export async function storeEngineState(debateId: string, state: DebateEngineState): Promise<void> {
   const serialized = serializeState(state)
   const encrypted = encrypt(serialized)
-  engineStore.set(debateId, encrypted)
+  const redis = getRedisClient()
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${debateId}`
+    await redis.set(key, encrypted, { ex: ENGINE_TTL_SECONDS })
+  } else {
+    memoryStore.set(debateId, encrypted)
+  }
 }
 
 /**
@@ -117,13 +153,28 @@ export async function storeEngineState(debateId: string, state: DebateEngineStat
  * Returns null if not found or decryption fails.
  */
 export async function getEngineState(debateId: string): Promise<DebateEngineState | null> {
-  const encrypted = engineStore.get(debateId)
+  const redis = getRedisClient()
+  let encrypted: string | null = null
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${debateId}`
+    encrypted = await redis.get<string>(key)
+  } else {
+    encrypted = memoryStore.get(debateId) ?? null
+  }
+
   if (!encrypted) return null
 
   try {
     const decrypted = decrypt(encrypted)
     return deserializeState(decrypted)
   } catch {
+    // Corrupted data - clean up
+    if (redis) {
+      await redis.del(`${REDIS_KEY_PREFIX}${debateId}`)
+    } else {
+      memoryStore.delete(debateId)
+    }
     return null
   }
 }
@@ -132,14 +183,30 @@ export async function getEngineState(debateId: string): Promise<DebateEngineStat
  * Delete engine state for a debate.
  */
 export async function deleteEngineState(debateId: string): Promise<boolean> {
-  return engineStore.delete(debateId)
+  const redis = getRedisClient()
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${debateId}`
+    const deleted = await redis.del(key)
+    return deleted > 0
+  } else {
+    return memoryStore.delete(debateId)
+  }
 }
 
 /**
  * Check if engine state exists for a debate.
  */
 export async function hasEngineState(debateId: string): Promise<boolean> {
-  return engineStore.has(debateId)
+  const redis = getRedisClient()
+
+  if (redis) {
+    const key = `${REDIS_KEY_PREFIX}${debateId}`
+    const exists = await redis.exists(key)
+    return exists > 0
+  } else {
+    return memoryStore.has(debateId)
+  }
 }
 
 /**
@@ -159,21 +226,34 @@ export async function updateEngineState(
 
 /**
  * Get all active debate IDs (for monitoring).
+ * Note: Only accurate for memory store. Returns empty array when using Redis.
  */
 export function getActiveDebateIds(): string[] {
-  return Array.from(engineStore.keys())
+  const redis = getRedisClient()
+  if (redis) {
+    // Would need SCAN to get Redis keys - return empty for now
+    return []
+  }
+  return Array.from(memoryStore.keys())
 }
 
 /**
  * Get the count of active engine states.
+ * Note: Only accurate for memory store. Returns -1 when using Redis.
  */
 export function getEngineCount(): number {
-  return engineStore.size
+  const redis = getRedisClient()
+  if (redis) {
+    // Would need SCAN to count Redis keys - return -1 to indicate unknown
+    return -1
+  }
+  return memoryStore.size
 }
 
 /**
  * Clear all engine states (for testing).
+ * Note: Only clears memory store. Does not clear Redis.
  */
 export function clearAllEngineStates(): void {
-  engineStore.clear()
+  memoryStore.clear()
 }
