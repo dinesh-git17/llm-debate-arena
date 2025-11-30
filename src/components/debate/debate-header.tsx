@@ -15,36 +15,203 @@ interface DebateHeaderProps {
 }
 
 const FORMAT_DISPLAY_NAMES: Record<string, string> = {
-  standard: 'Standard Debate',
+  standard: 'Standard',
   oxford: 'Oxford Style',
   'lincoln-douglas': 'Lincoln-Douglas',
+}
+
+// Status chip configuration
+const STATUS_CHIP_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
+  ready: {
+    bg: 'bg-emerald-500/10 dark:bg-emerald-500/15',
+    text: 'text-emerald-600 dark:text-emerald-400',
+    dot: 'bg-emerald-500',
+  },
+  active: {
+    bg: 'bg-blue-500/10 dark:bg-blue-500/15',
+    text: 'text-blue-600 dark:text-blue-400',
+    dot: 'bg-blue-500',
+  },
+  paused: {
+    bg: 'bg-amber-500/10 dark:bg-amber-500/15',
+    text: 'text-amber-600 dark:text-amber-400',
+    dot: 'bg-amber-500',
+  },
+  completed: {
+    bg: 'bg-emerald-500/10 dark:bg-emerald-500/15',
+    text: 'text-emerald-600 dark:text-emerald-400',
+    dot: 'bg-emerald-500',
+  },
+  error: {
+    bg: 'bg-red-500/10 dark:bg-red-500/15',
+    text: 'text-red-600 dark:text-red-400',
+    dot: 'bg-red-500',
+  },
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  ready: 'Ready',
+  active: 'Live',
+  paused: 'Paused',
+  completed: 'Complete',
+  error: 'Error',
+}
+
+// Glow colors based on status for the radial effect
+const STATUS_GLOW: Record<string, string> = {
+  ready: 'from-emerald-500/8 via-transparent to-transparent',
+  active: 'from-blue-500/10 via-transparent to-transparent',
+  paused: 'from-amber-500/8 via-transparent to-transparent',
+  completed: 'from-emerald-500/8 via-transparent to-transparent',
+  error: 'from-red-500/8 via-transparent to-transparent',
 }
 
 export function DebateHeader({ debateId, className }: DebateHeaderProps) {
   const topic = useDebateViewStore((s) => s.topic)
   const format = useDebateViewStore((s) => s.format)
+  const status = useDebateViewStore((s) => s.status)
 
   const formatDisplayName = FORMAT_DISPLAY_NAMES[format] ?? format
+  const isActive = status === 'active' || status === 'paused'
+  const chipStyle = STATUS_CHIP_STYLES[status] ?? {
+    bg: 'bg-muted',
+    text: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
+  }
+  const statusLabel = STATUS_LABELS[status] ?? status
+  const glowGradient = STATUS_GLOW[status] ?? STATUS_GLOW.ready
 
   return (
-    <header className={cn('border-b bg-card', className)}>
-      <div className="mx-auto max-w-6xl px-4 py-4">
-        <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-bold text-foreground md:text-2xl">
-              {topic || 'Loading...'}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">{formatDisplayName}</p>
+    <header
+      className={cn(
+        'relative overflow-hidden',
+        // Apple-grade layered surface
+        'border-b border-white/[0.04]',
+        'bg-card/95',
+        'backdrop-blur-2xl backdrop-saturate-150',
+        // Inset shadow for depth instead of outward
+        'shadow-[inset_0_-1px_0_rgba(0,0,0,0.1)]',
+        className
+      )}
+    >
+      {/* Subtle top highlight for glass depth - very faint */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+
+      {/* Radial glow behind content */}
+      <div
+        className={cn(
+          'pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-radial-gradient opacity-60 blur-3xl transition-opacity duration-700',
+          glowGradient,
+          isActive ? 'opacity-80' : 'opacity-40'
+        )}
+        style={{
+          background: `radial-gradient(circle, var(--tw-gradient-stops))`,
+        }}
+      />
+
+      {/* Content container with consistent grid alignment */}
+      <div className="relative mx-auto max-w-5xl px-6 py-6 md:px-8 md:py-8">
+        {/* MOBILE LAYOUT: Centered title with compact controls */}
+        <div className="md:hidden">
+          {/* Mobile controls row - centered */}
+          <div className="flex justify-center">
+            <DebateControls debateId={debateId} variant="mobile" />
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Centered title */}
+          <div className="mt-4 text-center">
+            <h1
+              className={cn(
+                'truncate transition-all duration-300',
+                isActive
+                  ? 'text-xl font-semibold leading-tight text-foreground'
+                  : 'text-lg font-semibold leading-tight text-foreground/85'
+              )}
+            >
+              {topic || 'Loading...'}
+            </h1>
+          </div>
+
+          {/* Metadata chips row - centered under title */}
+          <div className="mt-3 flex items-center justify-center gap-2">
+            {/* Format chip */}
+            <span className="rounded-md bg-muted/50 px-2 py-1 text-[11px] leading-none text-muted-foreground/70">
+              {formatDisplayName}
+            </span>
+            {/* Status chip */}
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-2 py-1',
+                'text-[11px] font-medium leading-none',
+                chipStyle.bg,
+                chipStyle.text
+              )}
+            >
+              <span className={cn('h-1.5 w-1.5 rounded-full', chipStyle.dot)} />
+              {statusLabel}
+            </span>
+            {/* Connection status */}
             <ConnectionStatus />
-            <DebateControls debateId={debateId} />
           </div>
         </div>
 
-        <ProgressBar />
+        {/* DESKTOP LAYOUT: Original horizontal layout */}
+        <div className="hidden md:block">
+          {/* Primary row: Metadata + Controls - baseline aligned */}
+          <div className="flex items-center justify-between gap-8">
+            {/* Left: Metadata row */}
+            <div className="flex items-center gap-3">
+              {/* Format label */}
+              <span className="text-[13px] leading-none tracking-wide text-muted-foreground/60">
+                {formatDisplayName}
+              </span>
+              <span className="text-muted-foreground/20">·</span>
+              {/* Status chip */}
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2 py-1',
+                  'text-[11px] font-medium leading-none',
+                  'backdrop-blur-sm',
+                  chipStyle.bg,
+                  chipStyle.text
+                )}
+              >
+                <span className={cn('h-1.5 w-1.5 rounded-full', chipStyle.dot)} />
+                {statusLabel}
+              </span>
+              <span className="text-muted-foreground/20">·</span>
+              <ConnectionStatus />
+            </div>
+
+            {/* Right: Controls */}
+            <div className="flex shrink-0 items-center">
+              <DebateControls debateId={debateId} />
+            </div>
+          </div>
+
+          {/* Topic title row */}
+          <div className="mt-4">
+            <h1
+              className={cn(
+                'truncate transition-all duration-300',
+                isActive
+                  ? 'text-[22px] font-semibold leading-tight text-foreground md:text-2xl'
+                  : 'text-xl font-semibold leading-tight text-foreground/85 md:text-[22px]'
+              )}
+            >
+              {topic || 'Loading...'}
+            </h1>
+          </div>
+        </div>
+
+        {/* Progress section - generous spacing creates hierarchy without separator */}
+        <div className="mt-8">
+          <ProgressBar />
+        </div>
       </div>
+
+      {/* Bottom edge - subtle inner shadow line */}
+      <div className="absolute inset-x-0 bottom-0 h-px bg-black/[0.08] dark:bg-black/20" />
     </header>
   )
 }

@@ -29,22 +29,28 @@ html {
 }
 
 .dark {
-  /* Cool-tinted blacks for premium device-grade look */
-  --background: 220 15% 4%;
+  /* Apple-grade dark charcoal - not pure black, subtle warmth */
+  /* Base: #0A0A0A equivalent with slight warm undertone */
+  --background: 0 0% 4%;
   --foreground: 0 0% 98%;
-  --card: 220 12% 5%;
+  /* Layered surfaces for depth - each layer slightly lighter */
+  --card: 0 0% 6%;
   --card-foreground: 0 0% 98%;
   --primary: 0 0% 98%;
-  --primary-foreground: 220 15% 8%;
-  --secondary: 220 10% 12%;
+  --primary-foreground: 0 0% 9%;
+  /* Secondary surfaces for interactive elements */
+  --secondary: 0 0% 11%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 220 10% 10%;
-  --muted-foreground: 220 5% 64%;
-  --accent: 220 10% 12%;
+  /* Muted for subtle backgrounds */
+  --muted: 0 0% 9%;
+  --muted-foreground: 0 0% 55%;
+  /* Accent matches secondary for consistency */
+  --accent: 0 0% 11%;
   --accent-foreground: 0 0% 98%;
   --destructive: 0 62.8% 30.6%;
-  --border: 220 10% 14%;
-  --ring: 220 5% 80%;
+  /* Borders - very subtle, almost invisible */
+  --border: 0 0% 15%;
+  --ring: 0 0% 80%;
 }
 
 @theme inline {
@@ -486,4 +492,37 @@ body {
 
 .animate-subtle-pulse {
   animation: subtlePulse 2s ease-in-out infinite;
+}
+
+/* Apple-style breathing pulse for live indicators - subtle and elegant */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes breathe-glow {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(1.4);
+  }
+}
+
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.animate-breathe-glow {
+  animation: breathe-glow 3s ease-in-out infinite;
 }

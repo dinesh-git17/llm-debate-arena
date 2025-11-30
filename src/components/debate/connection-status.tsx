@@ -14,34 +14,35 @@ interface ConnectionStatusProps {
 interface ConnectionConfig {
   dot: string
   text: string
-  pulse: boolean
+  pulse: 'none' | 'ping' | 'breathe'
 }
 
 const CONNECTION_CONFIGS: Record<ViewConnectionStatus, ConnectionConfig> = {
   disconnected: {
-    dot: 'bg-gray-400',
-    text: 'Disconnected',
-    pulse: false,
+    dot: 'bg-muted-foreground/50',
+    text: 'Offline',
+    pulse: 'none',
   },
   connecting: {
     dot: 'bg-amber-400',
-    text: 'Connecting...',
-    pulse: true,
+    text: 'Connecting',
+    pulse: 'ping',
   },
   connected: {
-    dot: 'bg-green-500',
+    // Softer green, not neon
+    dot: 'bg-emerald-400',
     text: 'Live',
-    pulse: true,
+    pulse: 'breathe',
   },
   reconnecting: {
     dot: 'bg-amber-400',
-    text: 'Reconnecting...',
-    pulse: true,
+    text: 'Reconnecting',
+    pulse: 'ping',
   },
   error: {
-    dot: 'bg-red-500',
-    text: 'Connection error',
-    pulse: false,
+    dot: 'bg-red-400',
+    text: 'Error',
+    pulse: 'none',
   },
 }
 
@@ -56,18 +57,37 @@ export function ConnectionStatus({ className }: ConnectionStatusProps) {
       aria-live="polite"
       aria-label={`Connection status: ${config.text}`}
     >
-      <span className="relative flex h-2.5 w-2.5">
-        {config.pulse && (
+      {/* Status dot - optically centered with text */}
+      <span className="relative flex h-[6px] w-[6px]">
+        {/* Ping animation for connecting/reconnecting states */}
+        {config.pulse === 'ping' && (
           <span
             className={cn(
-              'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+              'absolute inline-flex h-full w-full animate-ping rounded-full opacity-60',
               config.dot
             )}
           />
         )}
-        <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', config.dot)} />
+        {/* Apple-style breathing glow for live state */}
+        {config.pulse === 'breathe' && (
+          <span
+            className={cn(
+              'absolute inline-flex h-full w-full animate-breathe-glow rounded-full',
+              config.dot
+            )}
+          />
+        )}
+        {/* Core dot - breathing animation when live */}
+        <span
+          className={cn(
+            'relative inline-flex h-[6px] w-[6px] rounded-full',
+            config.dot,
+            config.pulse === 'breathe' && 'animate-breathe'
+          )}
+        />
       </span>
-      <span className="text-xs text-muted-foreground">{config.text}</span>
+      {/* Label - baseline aligned with other text in header */}
+      <span className="text-[13px] leading-none text-muted-foreground/60">{config.text}</span>
     </div>
   )
 }

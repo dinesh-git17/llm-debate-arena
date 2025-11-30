@@ -9,7 +9,7 @@ import { FloatingControls } from '@/components/debate/floating-controls'
 import { MessageList } from '@/components/debate/message-list'
 import { ShortcutsHelp } from '@/components/debate/shortcuts-help'
 import { useDebateStream } from '@/hooks/use-debate-stream'
-import { clientLogger } from '@/lib/client-logger'
+// import { clientLogger } from '@/lib/client-logger' // TODO: Re-enable with auto-start
 import { useDebateViewStore } from '@/store/debate-view-store'
 
 import type { DebateHistoryResponse } from '@/app/api/debate/[id]/history/route'
@@ -54,24 +54,25 @@ export function DebatePageClient({
   const hasHydrated = useRef(false)
   const previousDebateId = useRef<string | null>(null)
 
-  const autoStartDebate = useCallback(async () => {
-    if (hasAutoStarted.current) return
-    hasAutoStarted.current = true
-
-    try {
-      const response = await fetch(`/api/debate/${debateId}/engine`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-
-      if (!response.ok) {
-        const data = (await response.json()) as { error?: string }
-        clientLogger.error('Auto-start failed', null, { error: data.error ?? 'Unknown error' })
-      }
-    } catch (error) {
-      clientLogger.error('Auto-start error', error)
-    }
-  }, [debateId])
+  // TODO: Re-enable auto-start after empty state review
+  // const autoStartDebate = useCallback(async () => {
+  //   if (hasAutoStarted.current) return
+  //   hasAutoStarted.current = true
+  //
+  //   try {
+  //     const response = await fetch(`/api/debate/${debateId}/engine`, {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //     })
+  //
+  //     if (!response.ok) {
+  //       const data = (await response.json()) as { error?: string }
+  //       clientLogger.error('Auto-start failed', null, { error: data.error ?? 'Unknown error' })
+  //     }
+  //   } catch (error) {
+  //     clientLogger.error('Auto-start error', error)
+  //   }
+  // }, [debateId])
 
   // Fetch and hydrate existing debate history from server
   const hydrateFromServer = useCallback(async () => {
@@ -132,9 +133,10 @@ export function DebatePageClient({
     hydrateFromServer()
 
     // Auto-start debate if status is ready
-    if (initialStatus === 'ready') {
-      autoStartDebate()
-    }
+    // TODO: Re-enable auto-start after empty state review
+    // if (initialStatus === 'ready') {
+    //   autoStartDebate()
+    // }
 
     // No cleanup reset - we want to preserve messages when navigating away
     // Messages are only cleared when switching to a different debate
@@ -146,7 +148,7 @@ export function DebatePageClient({
     setDebateInfo,
     setStatus,
     reset,
-    autoStartDebate,
+    // autoStartDebate, // TODO: Re-enable
     hydrateFromServer,
   ])
 
